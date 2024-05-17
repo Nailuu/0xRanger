@@ -1,62 +1,57 @@
 import { expect } from "chai";
-import { ethers, deployments, network, getNamedAccounts } from "hardhat";
+import { ethers, deployments } from "hardhat";
 import { Contract } from "ethers";
 import { IERC20 } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
-const WETH = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
-const USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
-const DAI = "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1";
+const POOL = {
+  ETH_MAINNET: {
+    USDC: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    DAI: "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+    FEE: 100,
+  },
+};
 
-const FEE = 500;
-
-const WHALE = "0x090ee598777CaDDAd04Df4271B167F38E73a9Bf0";
-// const DAI_WHALE = "0xea2a2AC89281d1673E5018F60933970626905285";
-
-const AMOUNT0 = 10000n;
-const AMOUNT1 = 10n;
+const WHALE = {
+  ETH_MAINNET: {
+    DAI: "0xFd546293a729fE1A05D249Ad4F2CA984082F889e",
+    USDC: "0x1bf0Aa215DAB195f21372105F53661e46F962ff3",
+  },
+  ARBITRUM: {},
+};
 
 describe("Ranger", async () => {
   let contract: Contract;
   let accounts: HardhatEthersSigner[];
-  let weth: IERC20;
+  // let weth: IERC20;
   let usdc: IERC20;
-  //   let dai: IERC20;
+  let dai: IERC20;
+
+  const daiAmount = 1000n * 10n ** 18n;
+  const usdcAmount = 1000n * 10n ** 6n;
 
   before(async () => {
     await deployments.fixture(["all"]);
 
     accounts = await ethers.getSigners();
 
-    const tmp = await deployments.get("Ranger");
-    contract = await ethers.getContractAt(tmp.abi, tmp.address);
+    const tmp3 = await deployments.get("Ranger");
+    contract = await ethers.getContractAt(tmp3.abi, tmp3.address);
 
-    usdc = await ethers.getContractAt("IERC20", USDC);
-    weth = await ethers.getContractAt("IERC20", WETH);
-    //     dai = await ethers.getContractAt("IERC20", DAI);
+    usdc = await ethers.getContractAt("IERC20", POOL.ETH_MAINNET.USDC);
+    // weth = await ethers.getContractAt("IERC20", WETH);
+    dai = await ethers.getContractAt("IERC20", POOL.ETH_MAINNET.DAI);
 
-    await network.provider.request({
-      method: "hardhat_impersonateAccount",
-      params: [WHALE],
-    });
+    const dai_whale = await ethers.getImpersonatedSigner(WHALE.ETH_MAINNET.DAI);
+    const usdc_whale = await ethers.getImpersonatedSigner(
+      WHALE.ETH_MAINNET.USDC
+    );
 
-    const whale = await ethers.getSigner(WHALE);
+    expect(await dai.balanceOf(dai_whale.address)).to.gte(daiAmount);
+    expect(await usdc.balanceOf(usdc_whale.address)).to.gte(usdcAmount);
 
-    //     await network.provider.request({
-    //       method: "hardhat_impersonateAccount",
-    //       params: [DAI_WHALE],
-    //     });
-
-    //     const dai_whale = await ethers.getSigner(DAI_WHALE);
-
-    const token0amount = AMOUNT0 * 10n ** 6n;
-    const token1amount = AMOUNT1 * 10n ** 18n;
-
-    expect(await usdc.balanceOf(whale.address)).to.gte(token0amount);
-    expect(await weth.balanceOf(whale.address)).to.gte(token1amount);
-
-    await usdc.connect(whale).transfer(accounts[0].address, token0amount);
-    await weth.connect(whale).transfer(accounts[0].address, token1amount);
+    await dai.connect(dai_whale).transfer(accounts[0].address, daiAmount);
+    await usdc.connect(usdc_whale).transfer(accounts[0].address, usdcAmount);
   });
 
   it("Pool with given parameters exist", async () => {
@@ -65,22 +60,32 @@ describe("Ranger", async () => {
       "0x1F98431c8aD98523631AE4a59f267346ea31F984"
     );
 
-    const pool = await factory.getPool(USDC, WETH, FEE);
+    const pool = await factory.getPool(
+      POOL.ETH_MAINNET.USDC,
+      POOL.ETH_MAINNET.DAI,
+      POOL.ETH_MAINNET.FEE
+    );
     expect(pool).to.not.equal("0x0000000000000000000000000000000000000000");
   });
 
   it("Mint new position", async () => {
-    const token0amount = AMOUNT0 * 10n ** 6n;
-    const token1amount = AMOUNT1 * 10n ** 18n;
-
     const contractAddress = await contract.getAddress();
 
-    await usdc.connect(accounts[0]).transfer(contractAddress, token0amount);
-    await weth.connect(accounts[0]).transfer(contractAddress, token1amount);
+    await dai.connect(accounts[0]).transfer(contractAddress, daiAmount);
+    await usdc.connect(accounts[0]).transfer(contractAddress, usdcAmount);
 
-    expect(await usdc.balanceOf(contractAddress)).to.gte(token0amount);
-    expect(await weth.balanceOf(contractAddress)).to.gte(token1amount);
+    expect(await dai.balanceOf(contractAddress)).to.gte(daiAmount);
+    expect(await usdc.balanceOf(contractAddress)).to.gte(usdcAmount);
 
-    await contract.mintNewPosition(token0amount, token1amount);
+    await contract.mintNewPosition();
+
+    console.log(
+      "DAI balance after add liquidity",
+      await dai.balanceOf(accounts[0].address)
+    );
+    console.log(
+      "USDC balance after add liquidity",
+      await usdc.balanceOf(accounts[0].address)
+    );
   });
 });

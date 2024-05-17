@@ -8,16 +8,19 @@ import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
+import "@uniswap/v3-periphery/contracts/libraries/PoolAddress.sol";
 import "@uniswap/v3-periphery/contracts/base/LiquidityManagement.sol";
 
 import "hardhat/console.sol";
 
 contract Ranger is IERC721Receiver {
-    address public constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
-    // address public constant DAI = 0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1;
-    address public constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
+    // address public constant ARB_WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
+    // address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    address public constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
+    // address public constant ARB_USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
+    address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
 
-    uint24 public constant poolFee = 500;
+    uint24 public constant poolFee = 100;
 
     INonfungiblePositionManager public constant nonfungiblePositionManager =
         INonfungiblePositionManager(0xC36442b4a4522E871399CD717aBDD847Ab11FE88);
@@ -80,44 +83,35 @@ contract Ranger is IERC721Receiver {
         console.log("Liquidity: ", liquidity);
     }
 
-    /// @notice Calls the mint function defined in periphery, mints the same amount of each token. For this example we are providing X0 USDC and X1 WETH in liquidity
-    /// @return tokenId The id of the newly minted ERC721
-    /// @return liquidity The amount of liquidity for the position
-    /// @return amount0 The amount of token0
-    /// @return amount1 The amount of token1
-    function mintNewPosition(
-        uint256 amount0ToMint,
-        uint256 amount1ToMint
-    )
+    function mintNewPosition()
         external
-        returns (
-            uint256 tokenId,
-            uint128 liquidity,
-            uint256 amount0,
-            uint256 amount1
-        )
+        returns (uint _tokenId, uint128 liquidity, uint amount0, uint amount1)
     {
         // For this example, we will provide equal amounts of liquidity in both assets.
         // Providing liquidity in both assets means liquidity will be earning fees and is considered in-range.
-        // uint256 amount0ToMint = 1000;
-        // uint256 amount1ToMint = 1000;
+        uint amount0ToMint = 1000 * 1e18;
+        uint amount1ToMint = 1000 * 1e6;
 
         // Approve the position manager
         TransferHelper.safeApprove(
-            USDC,
+            DAI,
             address(nonfungiblePositionManager),
             amount0ToMint
         );
         TransferHelper.safeApprove(
-            WETH,
+            USDC,
             address(nonfungiblePositionManager),
             amount1ToMint
         );
-        INonfungiblePositionManager.MintParams
-            memory params = INonfungiblePositionManager.MintParams({
-                token0: USDC,
-                token1: WETH,
+
+        INonfungiblePositionManager.MintParams memory params = INonfungiblePositionManager
+            .MintParams({
+                token0: DAI,
+                token1: USDC,
                 fee: poolFee,
+                // By using TickMath.MIN_TICK and TickMath.MAX_TICK,
+                // we are providing liquidity across the whole range of the pool.
+                // Not recommended in production.
                 tickLower: TickMath.MIN_TICK,
                 tickUpper: TickMath.MAX_TICK,
                 amount0Desired: amount0ToMint,
@@ -128,31 +122,33 @@ contract Ranger is IERC721Receiver {
                 deadline: block.timestamp
             });
 
-        // Note that the pool defined by DAI/USDC and fee tier 0.3% must already be created and initialized in order to mint
-        (tokenId, liquidity, amount0, amount1) = nonfungiblePositionManager
+        // Note that the pool defined by DAI/USDC and fee tier 0.01% must
+        // already be created and initialized in order to mint
+        (_tokenId, liquidity, amount0, amount1) = nonfungiblePositionManager
             .mint(params);
 
         // Create a deposit
-        _createDeposit(msg.sender, tokenId);
+        _createDeposit(msg.sender, _tokenId);
 
         // Remove allowance and refund in both assets.
+        if (amount0 < amount0ToMint) {
+            TransferHelper.safeApprove(
+                DAI,
+                address(nonfungiblePositionManager),
+                0
+            );
+            uint refund0 = amount0ToMint - amount0;
+            TransferHelper.safeTransfer(DAI, msg.sender, refund0);
+        }
+
         if (amount1 < amount1ToMint) {
             TransferHelper.safeApprove(
                 USDC,
                 address(nonfungiblePositionManager),
                 0
             );
-            uint256 refund1 = amount1ToMint - amount1;
+            uint refund1 = amount1ToMint - amount1;
             TransferHelper.safeTransfer(USDC, msg.sender, refund1);
-        }
-        if (amount0 < amount0ToMint) {
-            TransferHelper.safeApprove(
-                WETH,
-                address(nonfungiblePositionManager),
-                0
-            );
-            uint256 refund0 = amount0ToMint - amount0;
-            TransferHelper.safeTransfer(WETH, msg.sender, refund0);
         }
     }
 }

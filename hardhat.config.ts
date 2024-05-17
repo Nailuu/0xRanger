@@ -9,6 +9,7 @@ require("dotenv").config();
 
 const ARBITRUM_SEPOLIA_RPC_URL = process.env.ARBITRUM_SEPOLIA_RPC_URL;
 const ARBITRUM_RPC_URL = process.env.ARBITRUM_RPC_URL;
+const ETHEREUM_RPC_URL = process.env.ETHEREUM_RPC_URL;
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const COINMARKETCAP_API_KEY = process.env.COINMARKETCAP_API_KEY;
 const REPORT_GAS = process.env.REPORT_GAS;
@@ -20,11 +21,11 @@ const DEFAULT_COMPILER_SETTINGS = {
     evmVersion: "istanbul",
     optimizer: {
       enabled: true,
-      runs: 1_000_000,
+      runs: 800,
     },
-    metadata: {
-      bytecodeHash: "none",
-    },
+    // metadata: {
+    //   bytecodeHash: "none",
+    // },
   },
 };
 
@@ -36,8 +37,12 @@ const config: HardhatUserConfig = {
   networks: {
     hardhat: {
       forking: {
-        url: ARBITRUM_RPC_URL!,
+        enabled: true,
+        url: ETHEREUM_RPC_URL!,
+        // url: ARBITRUM_RPC_URL!,
+        // blockNumber: 212196660,
       },
+      chainId: 31337,
     },
     sepolia: {
       url: ARBITRUM_SEPOLIA_RPC_URL,
