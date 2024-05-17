@@ -38,9 +38,9 @@ const config: HardhatUserConfig = {
     hardhat: {
       forking: {
         enabled: true,
-        url: ETHEREUM_RPC_URL!,
-        // url: ARBITRUM_RPC_URL!,
-        // blockNumber: 212196660,
+        // url: ETHEREUM_RPC_URL!,
+        url: ARBITRUM_RPC_URL!,
+        blockNumber: 212279290,
       },
       chainId: 31337,
     },

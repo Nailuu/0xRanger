@@ -14,11 +14,13 @@ import "@uniswap/v3-periphery/contracts/base/LiquidityManagement.sol";
 import "hardhat/console.sol";
 
 contract Ranger is IERC721Receiver {
-    // address public constant ARB_WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
+    address public constant ARB_WETH =
+        0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
     // address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    address public constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
-    // address public constant ARB_USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
-    address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    // address public constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
+    address public constant ARB_USDC =
+        0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
+    // address public constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
 
     uint24 public constant poolFee = 100;
 
@@ -83,31 +85,30 @@ contract Ranger is IERC721Receiver {
         console.log("Liquidity: ", liquidity);
     }
 
-    function mintNewPosition()
+    function mintNewPosition(
+        uint amount0ToMint,
+        uint amount1ToMint
+    )
         external
         returns (uint _tokenId, uint128 liquidity, uint amount0, uint amount1)
     {
-        // For this example, we will provide equal amounts of liquidity in both assets.
-        // Providing liquidity in both assets means liquidity will be earning fees and is considered in-range.
-        uint amount0ToMint = 1000 * 1e18;
-        uint amount1ToMint = 1000 * 1e6;
 
         // Approve the position manager
         TransferHelper.safeApprove(
-            DAI,
+            ARB_WETH,
             address(nonfungiblePositionManager),
             amount0ToMint
         );
         TransferHelper.safeApprove(
-            USDC,
+            ARB_USDC,
             address(nonfungiblePositionManager),
             amount1ToMint
         );
 
         INonfungiblePositionManager.MintParams memory params = INonfungiblePositionManager
             .MintParams({
-                token0: DAI,
-                token1: USDC,
+                token0: ARB_WETH,
+                token1: ARB_USDC,
                 fee: poolFee,
                 // By using TickMath.MIN_TICK and TickMath.MAX_TICK,
                 // we are providing liquidity across the whole range of the pool.
@@ -122,8 +123,6 @@ contract Ranger is IERC721Receiver {
                 deadline: block.timestamp
             });
 
-        // Note that the pool defined by DAI/USDC and fee tier 0.01% must
-        // already be created and initialized in order to mint
         (_tokenId, liquidity, amount0, amount1) = nonfungiblePositionManager
             .mint(params);
 
@@ -133,22 +132,22 @@ contract Ranger is IERC721Receiver {
         // Remove allowance and refund in both assets.
         if (amount0 < amount0ToMint) {
             TransferHelper.safeApprove(
-                DAI,
+                ARB_WETH,
                 address(nonfungiblePositionManager),
                 0
             );
             uint refund0 = amount0ToMint - amount0;
-            TransferHelper.safeTransfer(DAI, msg.sender, refund0);
+            TransferHelper.safeTransfer(ARB_WETH, msg.sender, refund0);
         }
 
         if (amount1 < amount1ToMint) {
             TransferHelper.safeApprove(
-                USDC,
+                ARB_USDC,
                 address(nonfungiblePositionManager),
                 0
             );
             uint refund1 = amount1ToMint - amount1;
-            TransferHelper.safeTransfer(USDC, msg.sender, refund1);
+            TransferHelper.safeTransfer(ARB_USDC, msg.sender, refund1);
         }
     }
 }
