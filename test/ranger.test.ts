@@ -1,6 +1,14 @@
 import { expect } from "chai";
 import { ethers, deployments } from "hardhat";
-import { Contract } from "ethers";
+import {
+  Contract,
+  TransactionReceipt,
+  ContractEvent,
+  ContractTransactionResponse,
+  ContractTransactionReceipt,
+  EventLog,
+  Log,
+} from "ethers";
 import { IERC20 } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
@@ -38,6 +46,8 @@ describe("Ranger", async () => {
   let accounts: HardhatEthersSigner[];
   let token0: IERC20;
   let token1: IERC20;
+
+  let tokenId: string;
 
   before(async () => {
     await deployments.fixture(["all"]);
@@ -95,15 +105,26 @@ describe("Ranger", async () => {
     expect(await token0.balanceOf(contractAddress)).to.gte(PARAMS.token0amount);
     expect(await token1.balanceOf(contractAddress)).to.gte(PARAMS.token1amount);
 
-    await contract.mintNewPosition(PARAMS.token0amount, PARAMS.token1amount);
+    const event: ContractEvent = contract.getEvent("newMint");
+    // console.log(event.getFragment());
 
-    // console.log(
-    //   "DAI balance after add liquidity",
-    //   await dai.balanceOf(accounts[0].address)
-    // );
-    // console.log(
-    //   "USDC balance after add liquidity",
-    //   await usdc.balanceOf(accounts[0].address)
-    // );
+    const tx: ContractTransactionResponse = await contract.mintNewPosition(
+      PARAMS.token0amount,
+      PARAMS.token1amount
+    );
+
+    const receipt: ContractTransactionReceipt | null = await tx.wait();
+
+    let _tokenId: string;
+    receipt?.logs.forEach((e) => {
+      const t = e as EventLog;
+      if (t.fragment == event.getFragment()) {
+        _tokenId = t.args[0].toString();
+      }
+    });
+
+    expect(_tokenId!).to.not.equal(undefined);
+
+    tokenId = _tokenId!;
   });
 });

@@ -38,6 +38,8 @@ contract Ranger is IERC721Receiver {
     /// @dev deposits[tokenId] => Deposit
     mapping(uint256 => Deposit) public deposits;
 
+    event newMint(uint _tokenId, uint128 liquidity, uint amount0, uint amount1);
+
     // constructor(INonfungiblePositionManager _nonfungiblePositionManager) {
     //     nonfungiblePositionManager = _nonfungiblePositionManager;
     // }
@@ -92,7 +94,6 @@ contract Ranger is IERC721Receiver {
         external
         returns (uint _tokenId, uint128 liquidity, uint amount0, uint amount1)
     {
-
         // Approve the position manager
         TransferHelper.safeApprove(
             ARB_WETH,
@@ -149,5 +150,89 @@ contract Ranger is IERC721Receiver {
             uint refund1 = amount1ToMint - amount1;
             TransferHelper.safeTransfer(ARB_USDC, msg.sender, refund1);
         }
+
+        emit newMint(_tokenId, liquidity, amount0, amount1);
+    }
+
+    /// @notice Collects the fees associated with provided liquidity
+    /// @dev The contract must hold the erc721 token before it can collect fees
+    /// @param tokenId The id of the erc721 token
+    /// @return amount0 The amount of fees collected in token0
+    /// @return amount1 The amount of fees collected in token1
+    function collectAllFees(
+        uint256 tokenId
+    ) internal returns (uint256 amount0, uint256 amount1) {
+        // Caller must own the ERC721 position
+        // Call to safeTransfer will trigger `onERC721Received` which must return the selector else transfer will fail
+        nonfungiblePositionManager.safeTransferFrom(
+            msg.sender,
+            address(this),
+            tokenId
+        );
+
+        // set amount0Max and amount1Max to uint256.max to collect all fees
+        // alternatively can set recipient to msg.sender and avoid another transaction in `sendToOwner`
+        INonfungiblePositionManager.CollectParams
+            memory params = INonfungiblePositionManager.CollectParams({
+                tokenId: tokenId,
+                recipient: address(this),
+                amount0Max: type(uint128).max,
+                amount1Max: type(uint128).max
+            });
+
+        (amount0, amount1) = nonfungiblePositionManager.collect(params);
+    }
+
+    /// @notice A function that decreases the current liquidity by half. An example to show how to call the `decreaseLiquidity` function defined in periphery.
+    /// @param tokenId The id of the erc721 token
+    /// @return amount0 The amount received back in token0
+    /// @return amount1 The amount returned back in token1
+    function withdrawLiquidity(
+        uint256 tokenId
+    ) external returns (uint256 amount0, uint256 amount1) {
+        // caller must be the owner of the NFT
+        require(msg.sender == deposits[tokenId].owner, "Not the owner");
+        // get liquidity data for tokenId
+        uint128 liquidity = deposits[tokenId].liquidity;
+
+        // amount0Min and amount1Min are price slippage checks
+        // if the amount received after burning is not greater than these minimums, transaction will fail
+        INonfungiblePositionManager.DecreaseLiquidityParams
+            memory params = INonfungiblePositionManager
+                .DecreaseLiquidityParams({
+                    tokenId: tokenId,
+                    liquidity: liquidity,
+                    amount0Min: 0,
+                    amount1Min: 0,
+                    deadline: block.timestamp
+                });
+
+        (amount0, amount1) = nonfungiblePositionManager.decreaseLiquidity(
+            params
+        );
+
+        (uint256 fee0, uint256 fee1) = collectAllFees(tokenId);
+
+        //send liquidity back to owner
+        _sendToOwner(tokenId, amount0 + fee0, amount1 + fee1);
+    }
+
+    /// @notice Transfers funds to owner of NFT
+    /// @param tokenId The id of the erc721
+    /// @param amount0 The amount of token0
+    /// @param amount1 The amount of token1
+    function _sendToOwner(
+        uint256 tokenId,
+        uint256 amount0,
+        uint256 amount1
+    ) internal {
+        // get owner of contract
+        address owner = deposits[tokenId].owner;
+
+        address token0 = deposits[tokenId].token0;
+        address token1 = deposits[tokenId].token1;
+        // send collected fees to owner
+        TransferHelper.safeTransfer(token0, owner, amount0);
+        TransferHelper.safeTransfer(token1, owner, amount1);
     }
 }
