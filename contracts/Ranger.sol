@@ -213,6 +213,7 @@ contract Ranger is IERC721Receiver {
 
         // Collect fees + tokens owed from decrease liquidity
         // to get fees earned amount0 - fee0 and amount1 - fee1
+        // WARNING: Need to look about rounding...
         (amount0, amount1) = nonfungiblePositionManager.collect(
             INonfungiblePositionManager.CollectParams({
                 tokenId: tokenId,
