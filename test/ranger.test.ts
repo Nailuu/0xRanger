@@ -9,7 +9,7 @@ import {
   EventLog,
   Log,
 } from "ethers";
-import { IERC20 } from "../typechain-types";
+import { IERC20, INonfungiblePositionManager } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 const POOL = {
@@ -48,6 +48,7 @@ describe("Ranger", async () => {
   let token1: IERC20;
 
   let tokenId: string;
+  let liquidity: number;
 
   before(async () => {
     await deployments.fixture(["all"]);
@@ -113,18 +114,61 @@ describe("Ranger", async () => {
       PARAMS.token1amount
     );
 
+    const nfmp = await ethers.getContractAt(
+      "INonfungiblePositionManager",
+      "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
+    );
+
+    // VERY IMPORTANT !!!!
+    // Give permission to smart contract to transfer the NFT to itself
+    await nfmp.setApprovalForAll(await contract.getAddress(), true);
+
     const receipt: ContractTransactionReceipt | null = await tx.wait();
 
     let _tokenId: string;
+    let _liquidity: number;
     receipt?.logs.forEach((e) => {
       const t = e as EventLog;
       if (t.fragment == event.getFragment()) {
         _tokenId = t.args[0].toString();
+        _liquidity = t.args[1];
       }
     });
 
     expect(_tokenId!).to.not.equal(undefined);
 
     tokenId = _tokenId!;
+    liquidity = _liquidity!;
+  });
+
+  it("Collect all fees and withdraw position", async () => {
+    const contractAddress = await contract.getAddress();
+
+    const nfmp = await ethers.getContractAt(
+      "INonfungiblePositionManager",
+      "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
+    );
+
+    const token0_before_balance = await token0.balanceOf(contractAddress);
+    const token1_before_balance = await token1.balanceOf(contractAddress);
+
+    await contract.withdrawLiquidity(tokenId);
+
+    const position = await nfmp.positions(tokenId);
+
+    // Liquidity
+    expect(position[7].toString()).to.equal("0");
+
+    // tokensOwed0 and tokensOwed1
+    expect(position[10].toString()).to.equal("0");
+    expect(position[11].toString()).to.equal("0");
+
+    // Check that smart contract received the tokens back
+    const token0_after_balance = await token0.balanceOf(contractAddress);
+    const token1_after_balance = await token1.balanceOf(contractAddress);
+
+    // Cannot check with to.equal PARAMS.token0.amount because there is a really small rounding in collect so the value is not exact
+    expect(token0_after_balance).to.greaterThan(token0_before_balance);
+    expect(token1_after_balance).to.greaterThan(token1_before_balance);
   });
 });

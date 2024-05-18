@@ -5,6 +5,7 @@ pragma abicoder v2;
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
@@ -24,6 +25,8 @@ contract Ranger is IERC721Receiver {
 
     uint24 public constant poolFee = 100;
 
+    address public immutable i_owner;
+
     INonfungiblePositionManager public constant nonfungiblePositionManager =
         INonfungiblePositionManager(0xC36442b4a4522E871399CD717aBDD847Ab11FE88);
 
@@ -40,9 +43,11 @@ contract Ranger is IERC721Receiver {
 
     event newMint(uint _tokenId, uint128 liquidity, uint amount0, uint amount1);
 
-    // constructor(INonfungiblePositionManager _nonfungiblePositionManager) {
-    //     nonfungiblePositionManager = _nonfungiblePositionManager;
-    // }
+    event collect(uint amount0, uint amount1);
+
+    constructor() {
+        i_owner = msg.sender;
+    }
 
     // Implementing `onERC721Received` so this contract can receive custody of erc721 tokens
     function onERC721Received(
@@ -82,9 +87,6 @@ contract Ranger is IERC721Receiver {
             token0: token0,
             token1: token1
         });
-
-        console.log("Token ID: ", tokenId);
-        console.log("Liquidity: ", liquidity);
     }
 
     function mintNewPosition(
@@ -92,6 +94,7 @@ contract Ranger is IERC721Receiver {
         uint amount1ToMint
     )
         external
+        onlyOwner
         returns (uint _tokenId, uint128 liquidity, uint amount0, uint amount1)
     {
         // Approve the position manager
@@ -106,26 +109,26 @@ contract Ranger is IERC721Receiver {
             amount1ToMint
         );
 
-        INonfungiblePositionManager.MintParams memory params = INonfungiblePositionManager
-            .MintParams({
-                token0: ARB_WETH,
-                token1: ARB_USDC,
-                fee: poolFee,
-                // By using TickMath.MIN_TICK and TickMath.MAX_TICK,
-                // we are providing liquidity across the whole range of the pool.
-                // Not recommended in production.
-                tickLower: TickMath.MIN_TICK,
-                tickUpper: TickMath.MAX_TICK,
-                amount0Desired: amount0ToMint,
-                amount1Desired: amount1ToMint,
-                amount0Min: 0,
-                amount1Min: 0,
-                recipient: address(this),
-                deadline: block.timestamp
-            });
-
         (_tokenId, liquidity, amount0, amount1) = nonfungiblePositionManager
-            .mint(params);
+            .mint(
+                INonfungiblePositionManager.MintParams({
+                    token0: ARB_WETH,
+                    token1: ARB_USDC,
+                    fee: poolFee,
+                    // By using TickMath.MIN_TICK and TickMath.MAX_TICK,
+                    // we are providing liquidity across the whole range of the pool.
+                    // Not recommended in production.
+                    tickLower: TickMath.MIN_TICK,
+                    tickUpper: TickMath.MAX_TICK,
+                    amount0Desired: amount0ToMint,
+                    amount1Desired: amount1ToMint,
+                    // NEED TO IMPLEMENT SLIPPAGE PROTECTION
+                    amount0Min: 0,
+                    amount1Min: 0,
+                    recipient: address(this),
+                    deadline: block.timestamp
+                })
+            );
 
         // Create a deposit
         _createDeposit(msg.sender, _tokenId);
@@ -137,8 +140,9 @@ contract Ranger is IERC721Receiver {
                 address(nonfungiblePositionManager),
                 0
             );
-            uint refund0 = amount0ToMint - amount0;
-            TransferHelper.safeTransfer(ARB_WETH, msg.sender, refund0);
+            // useless to refund owner because we want to keep funds in the same contract ?
+            // uint refund0 = amount0ToMint - amount0;
+            // TransferHelper.safeTransfer(ARB_WETH, msg.sender, refund0);
         }
 
         if (amount1 < amount1ToMint) {
@@ -147,92 +151,89 @@ contract Ranger is IERC721Receiver {
                 address(nonfungiblePositionManager),
                 0
             );
-            uint refund1 = amount1ToMint - amount1;
-            TransferHelper.safeTransfer(ARB_USDC, msg.sender, refund1);
+            // useless to refund owner because we want to keep funds in the same contract ?
+            // uint refund1 = amount1ToMint - amount1;
+            // TransferHelper.safeTransfer(ARB_USDC, msg.sender, refund1);
         }
+
+        nonfungiblePositionManager.safeTransferFrom(
+            address(this),
+            msg.sender,
+            _tokenId
+        );
 
         emit newMint(_tokenId, liquidity, amount0, amount1);
     }
 
-    /// @notice Collects the fees associated with provided liquidity
-    /// @dev The contract must hold the erc721 token before it can collect fees
-    /// @param tokenId The id of the erc721 token
-    /// @return amount0 The amount of fees collected in token0
-    /// @return amount1 The amount of fees collected in token1
-    function collectAllFees(
+    function withdrawLiquidity(
         uint256 tokenId
-    ) internal returns (uint256 amount0, uint256 amount1) {
-        // Caller must own the ERC721 position
-        // Call to safeTransfer will trigger `onERC721Received` which must return the selector else transfer will fail
+    ) external returns (uint256 amount0, uint256 amount1) {
+        // require is only for testing to not forget about approval, can be removed in production
+        require(
+            nonfungiblePositionManager.isApprovedForAll(
+                msg.sender,
+                address(this)
+            ),
+            "Contract doesn't have ApprovalForAll"
+        );
+
+        // caller must be the owner of the NFT
+        require(msg.sender == deposits[tokenId].owner, "Not the owner");
+
+        // Transfer ownership to itself (smart contract)
+        // Smart contract needs to be setApprovalForAll !!
         nonfungiblePositionManager.safeTransferFrom(
             msg.sender,
             address(this),
             tokenId
         );
 
-        // set amount0Max and amount1Max to uint256.max to collect all fees
-        // alternatively can set recipient to msg.sender and avoid another transaction in `sendToOwner`
-        INonfungiblePositionManager.CollectParams
-            memory params = INonfungiblePositionManager.CollectParams({
-                tokenId: tokenId,
-                recipient: address(this),
-                amount0Max: type(uint128).max,
-                amount1Max: type(uint128).max
-            });
-
-        (amount0, amount1) = nonfungiblePositionManager.collect(params);
-    }
-
-    /// @notice A function that decreases the current liquidity by half. An example to show how to call the `decreaseLiquidity` function defined in periphery.
-    /// @param tokenId The id of the erc721 token
-    /// @return amount0 The amount received back in token0
-    /// @return amount1 The amount returned back in token1
-    function withdrawLiquidity(
-        uint256 tokenId
-    ) external returns (uint256 amount0, uint256 amount1) {
-        // caller must be the owner of the NFT
-        require(msg.sender == deposits[tokenId].owner, "Not the owner");
         // get liquidity data for tokenId
         uint128 liquidity = deposits[tokenId].liquidity;
 
         // amount0Min and amount1Min are price slippage checks
         // if the amount received after burning is not greater than these minimums, transaction will fail
-        INonfungiblePositionManager.DecreaseLiquidityParams
-            memory params = INonfungiblePositionManager
-                .DecreaseLiquidityParams({
-                    tokenId: tokenId,
-                    liquidity: liquidity,
-                    amount0Min: 0,
-                    amount1Min: 0,
-                    deadline: block.timestamp
-                });
 
-        (amount0, amount1) = nonfungiblePositionManager.decreaseLiquidity(
-            params
+        // Decrease full liquidity (basically delete position)
+        // RETURN fee0 and fee1
+        nonfungiblePositionManager.decreaseLiquidity(
+            INonfungiblePositionManager.DecreaseLiquidityParams({
+                tokenId: tokenId,
+                liquidity: liquidity,
+                // NEED TO IMPLEMENT SLIPPAGE PROTECTION
+                amount0Min: 0,
+                amount1Min: 0,
+                deadline: block.timestamp
+            })
         );
 
-        (uint256 fee0, uint256 fee1) = collectAllFees(tokenId);
+        // Caller must own the ERC721 position
+        // Call to safeTransfer will trigger `onERC721Received` which must return the selector else transfer will fail
+        // set amount0Max and amount1Max to uint256.max to collect all fees
 
-        //send liquidity back to owner
-        _sendToOwner(tokenId, amount0 + fee0, amount1 + fee1);
+        // Collect fees + tokens owed from decrease liquidity
+        // to get fees earned amount0 - fee0 and amount1 - fee1
+        (amount0, amount1) = nonfungiblePositionManager.collect(
+            INonfungiblePositionManager.CollectParams({
+                tokenId: tokenId,
+                recipient: address(this),
+                amount0Max: type(uint128).max,
+                amount1Max: type(uint128).max
+            })
+        );
+
+        // Transfer NFT back to owner for safety reasons
+        nonfungiblePositionManager.safeTransferFrom(
+            address(this),
+            msg.sender,
+            tokenId
+        );
+
+        emit collect(amount0, amount1);
     }
 
-    /// @notice Transfers funds to owner of NFT
-    /// @param tokenId The id of the erc721
-    /// @param amount0 The amount of token0
-    /// @param amount1 The amount of token1
-    function _sendToOwner(
-        uint256 tokenId,
-        uint256 amount0,
-        uint256 amount1
-    ) internal {
-        // get owner of contract
-        address owner = deposits[tokenId].owner;
-
-        address token0 = deposits[tokenId].token0;
-        address token1 = deposits[tokenId].token1;
-        // send collected fees to owner
-        TransferHelper.safeTransfer(token0, owner, amount0);
-        TransferHelper.safeTransfer(token1, owner, amount1);
+    modifier onlyOwner() {
+        require(msg.sender == i_owner, "Not Owner!");
+        _;
     }
 }
