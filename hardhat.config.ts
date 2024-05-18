@@ -14,6 +14,7 @@ const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const COINMARKETCAP_API_KEY = process.env.COINMARKETCAP_API_KEY;
 const REPORT_GAS = process.env.REPORT_GAS;
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;
+const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY;
 
 const DEFAULT_COMPILER_SETTINGS = {
   version: "0.7.6",
@@ -65,8 +66,8 @@ const config: HardhatUserConfig = {
     L2: "arbitrum",
     outputFile: "gas-report.txt",
     noColors: true,
-    // coinmarketcap: COINMARKETCAP_API_KEY,
-    L2Etherscan: ETHERSCAN_API_KEY,
+    coinmarketcap: COINMARKETCAP_API_KEY,
+    L2Etherscan: ARBISCAN_API_KEY,
   },
 };
 
