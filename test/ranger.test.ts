@@ -9,44 +9,28 @@ import {
     EventLog,
     Log,
 } from "ethers";
-import { IERC20, INonfungiblePositionManager } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { POOL, WHALE, getSlippageForAmmount } from "../helper-hardhat-config";
+import { IPositionData } from "../interfaces/IPositionData";
+import { IPoolConfig } from "../interfaces/IPoolConfig";
 
-const POOL = {
-    ETH_MAINNET: {
-        USDC: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-        DAI: "0x6B175474E89094C44Da98b954EedeAC495271d0F",
-        FEE: 100,
-    },
-    ARBITRUM: {
-        WETH: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-        USDC: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
-        FEE: 500,
-    },
-};
-
-const WHALE = {
-    ETH_MAINNET: {
-        DAI: "0xFd546293a729fE1A05D249Ad4F2CA984082F889e",
-        USDC: "0x1bf0Aa215DAB195f21372105F53661e46F962ff3",
-    },
-    ARBITRUM: {
-        WETH: "0x3368e17064C9BA5D6f1F93C4c678bea00cc78555",
-        USDC: "0xD7a827FBaf38c98E8336C5658E4BcbCD20a4fd2d",
-    },
-};
+const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY;
+const api = require("arbitrum").init(ARBISCAN_API_KEY);
 
 const PARAMS = {
-    token0amount: 100n * 10n ** 18n,
-    token1amount: 250000n * 10n ** 6n,
+    token0amount: 5n * 10n ** 18n,
+    token1amount: 7500n * 10n * 6n,
+    // 1 - 0.1 / 100
+    // X * (1 - 0.1 / 100) = X - 0.1%
+    slippagePercent: 0.999,
 };
 
 describe("Ranger", async () => {
     let contract: Contract;
     let contractAddress: string;
     let accounts: HardhatEthersSigner[];
-    let token0: IERC20;
-    let token1: IERC20;
+    let token0: Contract;
+    let token1: Contract;
 
     let tokenId: string;
     let liquidity: number;
@@ -78,12 +62,11 @@ describe("Ranger", async () => {
             PARAMS.token1amount,
         );
 
-        await token0
-            .connect(token0whale)
-            .transfer(accounts[0].address, PARAMS.token0amount);
-        await token1
-            .connect(token1whale)
-            .transfer(accounts[0].address, PARAMS.token1amount);
+        const copy0 = (await token0.connect(token0whale)) as Contract;
+        copy0.transfer(accounts[0].address, PARAMS.token0amount);
+
+        const copy1 = (await token1.connect(token1whale)) as Contract;
+        copy1.transfer(accounts[0].address, PARAMS.token1amount);
     });
 
     it("Pool with given parameters exist", async () => {
@@ -102,12 +85,11 @@ describe("Ranger", async () => {
     });
 
     it("Mint new position", async () => {
-        await token0
-            .connect(accounts[0])
-            .transfer(contractAddress, PARAMS.token0amount);
-        await token1
-            .connect(accounts[0])
-            .transfer(contractAddress, PARAMS.token1amount);
+        const copy0 = (await token0.connect(accounts[0])) as Contract;
+        copy0.transfer(contractAddress, PARAMS.token0amount);
+
+        const copy1 = (await token1.connect(accounts[0])) as Contract;
+        copy1.transfer(contractAddress, PARAMS.token1amount);
 
         // Check that the tokens has successfully been transfered to smart contract
         expect(await token0.balanceOf(contractAddress)).to.gte(
@@ -117,12 +99,23 @@ describe("Ranger", async () => {
             PARAMS.token1amount,
         );
 
+        // NEED TO USE SLIPPAGE AFTER BECAUSE FOR NOW THERE IS NO TICK CALCULATION AND WE PROVIVE FOR THE FULL RANGE
+        // const slippage = getSlippageForAmmount(
+        //     PARAMS.slippagePercent,
+        //     PARAMS.token0amount,
+        //     PARAMS.token1amount,
+        // );
+
         const tx: ContractTransactionResponse = await contract.mintNewPosition(
             PARAMS.token0amount,
             PARAMS.token1amount,
+            0,
+            0,
+            // slippage[0],
+            // slippage[1]
         );
 
-        const nfmp: INonfungiblePositionManager = await ethers.getContractAt(
+        const nfmp = await ethers.getContractAt(
             "INonfungiblePositionManager",
             "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
         );
@@ -132,26 +125,10 @@ describe("Ranger", async () => {
         // Needs to be implemented in prod!
         await nfmp.setApprovalForAll(contractAddress, true);
 
-        const receipt: ContractTransactionReceipt | null = await tx.wait();
+        const positionData = await contract.positionData();
 
-        // Loop through every log from transactionReceipt and find eventLog with same fragment as newMint event
-        // then set tokenId
-        let _tokenId: string;
-        let _liquidity: number;
-        const event: ContractEvent = contract.getEvent("mint");
-        receipt?.logs.forEach((e) => {
-            const t = e as EventLog;
-            if (t.fragment == event.getFragment()) {
-                _tokenId = t.args[0].toString();
-                _liquidity = t.args[1];
-            }
-        });
-
-        // Check that tokenId is not undefined for some reason...
-        expect(_tokenId!).to.not.equal(undefined);
-
-        tokenId = _tokenId!;
-        liquidity = _liquidity!;
+        tokenId = positionData.tokenId;
+        liquidity = positionData.liquidity;
     });
 
     it("Collect all fees and withdraw position", async () => {
@@ -163,7 +140,25 @@ describe("Ranger", async () => {
         const token0_before_balance = await token0.balanceOf(contractAddress);
         const token1_before_balance = await token1.balanceOf(contractAddress);
 
-        await contract.withdrawLiquidity(tokenId);
+        const positionData: IPositionData = await contract.positionData();
+        const poolConfig: IPoolConfig = await contract.poolConfig();
+
+        // Get number of token0 and token1 based on liquidity, pool for sqrtPriceX96, tickLower and tickUpper
+        const result: bigint[] = await contract.getAmountsForPosition(
+            poolConfig.pool,
+            positionData.liquidity,
+            positionData.tickLower,
+            positionData.tickUpper,
+        );
+
+        // Remove PARAMS.slippagePercent to amount0 and amount1 to get amount0Min and amount1Min
+        const slippage = getSlippageForAmmount(
+            PARAMS.slippagePercent,
+            result[0],
+            result[1],
+        );
+
+        await contract.withdrawLiquidity(slippage[0], slippage[1]);
 
         const position = await nfmp.positions(tokenId);
 
@@ -184,23 +179,33 @@ describe("Ranger", async () => {
     });
 
     it("Withdraw funds from contract to owner", async () => {
-        const token0_deployer_before_balance = await token0.balanceOf(
+        const token0address = await token0.getAddress();
+        const token1address = await token1.getAddress();
+
+        // Try to withdraw if not owner, transaction should be reverted
+        const notowner = contract.connect(accounts[1]) as Contract;
+        await expect(
+            notowner.safeWithdraw([token0address, token1address], false),
+        ).to.be.revertedWithCustomError(contract, "Unauthorized");
+
+        const token0_deployer_before_balance = await ethers.provider.getBalance(
             accounts[0].address,
         );
         const token1_deployer_before_balance = await token1.balanceOf(
             accounts[0].address,
         );
 
-        // Try to withdraw if not owner, transaction should be reverted
-        const notowner = contract.connect(accounts[1]) as Contract;
-        await expect(notowner.safeWithdraw()).to.be.revertedWith("Not Owner!");
-
         const token0_contract_before_balance =
             await token0.balanceOf(contractAddress);
         const token1_contract_before_balance =
             await token1.balanceOf(contractAddress);
 
-        await contract.safeWithdraw();
+        const tx: ContractTransactionResponse = await contract.safeWithdraw(
+            [token0address, token1address],
+            false,
+        );
+
+        const receipt: ContractTransactionReceipt | null = await tx.wait();
 
         const token0_contract_after_balance =
             await token0.balanceOf(contractAddress);
@@ -211,16 +216,21 @@ describe("Ranger", async () => {
         expect(token0_contract_after_balance).to.equal(0);
         expect(token1_contract_after_balance).to.equal(0);
 
-        const token0_deployer_after_balance = await token0.balanceOf(
+        const token0_deployer_after_balance = await ethers.provider.getBalance(
             accounts[0].address,
         );
         const token1_deployer_after_balance = await token1.balanceOf(
             accounts[0].address,
         );
 
+        const gasUsedInETH = receipt!.gasUsed * receipt!.gasPrice;
+
         // Check that owner has received the tokens
+        // do check to see if weth has been unwrapped
         expect(token0_deployer_after_balance).to.equal(
-            token0_deployer_before_balance + token0_contract_before_balance,
+            token0_deployer_before_balance +
+                token0_contract_before_balance -
+                gasUsedInETH,
         );
         expect(token1_deployer_after_balance).to.equal(
             token1_deployer_before_balance + token1_contract_before_balance,

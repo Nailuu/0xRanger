@@ -1,5 +1,6 @@
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction, DeployResult } from "hardhat-deploy/types";
+import { POOL } from "../helper-hardhat-config";
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const { deployments, getNamedAccounts } = hre;
@@ -10,6 +11,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const res: DeployResult = await deploy("Ranger", {
         from: deployer,
         log: true,
+        args: [POOL.ARBITRUM.WETH, POOL.ARBITRUM.USDC, POOL.ARBITRUM.FEE],
     });
 
     //   console.log("Ranger contract deployed at: ", res.address);
