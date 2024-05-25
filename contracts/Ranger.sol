@@ -8,7 +8,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 // All uniswapV3 contracts are imported locally from
 // https://github.com/Uniswap/v3-core/tree/0.8
 // https://github.com/Uniswap/v3-periphery/tree/0.8
-// to get solidity v0.8 compatible
+// to get solidity v0.8 compatibility
 
 import "./uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "./uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
@@ -24,6 +24,9 @@ import "./uniswap/v3-periphery/contracts/interfaces/external/IWETH9.sol";
 
 import "hardhat/console.sol";
 
+/// @title Ranger
+/// @author Nailu - https://github.com/Nailuu
+/// @notice Semi-automatic contract that update a Uniswap V3 LP position to optimize APR by staying within range 
 contract Ranger is IERC721Receiver {
     IWETH9 private constant WETH9 =
         IWETH9(0x82aF49447D8a07e3bd95BD0d56f35241523fBab1);
@@ -35,6 +38,8 @@ contract Ranger is IERC721Receiver {
     IUniswapV3Factory private constant _factory =
         IUniswapV3Factory(0x1F98431c8aD98523631AE4a59f267346ea31F984);
 
+    /** @notice Structure to holds the current position data used to determine if
+    the position is still in range but also to withdraw position */
     struct PositionData {
         uint256 tokenId;
         uint128 liquidity;
@@ -42,6 +47,7 @@ contract Ranger is IERC721Receiver {
         int24 tickUpper;
     }
 
+    /// @notice Structure to holds the current Uniswap V3 LP settings used to swap, create and delete positions
     struct PoolConfig {
         address pool;
         address token0;
@@ -59,6 +65,17 @@ contract Ranger is IERC721Receiver {
     error NotWETH();
     error InvalidPoolConfig();
 
+    modifier onlyOwner() {
+        if (msg.sender != _owner) {
+            revert Unauthorized();
+        }
+        _;
+    }
+
+    /// @param token0 address of the first token from the Uniswap V3 LP you want to use
+    /// @param token1 address of the second token from the Uniswap V3 LP you want to use
+    /// @param fee fee of the Uniswap V3 LP, can be retrieved from (LP Pool).fee
+    /// @dev Contract deployment will revert if a Uniswap V3 LP doesn't exist with given parameters  
     constructor(address token0, address token1, uint16 fee) {
         address pool = _factory.getPool(token0, token1, fee);
         if (pool == 0x0000000000000000000000000000000000000000) {
@@ -70,7 +87,14 @@ contract Ranger is IERC721Receiver {
         poolConfig = PoolConfig(pool, token0, token1, fee);
     }
 
-    // Implementing `onERC721Received` so this contract can receive custody of erc721 tokens
+    /// @dev Needed for WETH unwrapping, because withdraw is going to call with value this contract I guess
+    receive() external payable {
+        if (msg.sender != address(WETH9)) {
+            revert NotWETH();
+        }
+    }
+
+    /// @dev Implementing `onERC721Received` so this contract can receive custody of erc721 tokens
     function onERC721Received(
         address,
         address,
@@ -81,6 +105,7 @@ contract Ranger is IERC721Receiver {
         return this.onERC721Received.selector;
     }
 
+    /// @notice Update PositionData structure with new position parameters
     function _setPositionData(uint256 tokenId) internal {
         (
             ,
@@ -100,6 +125,11 @@ contract Ranger is IERC721Receiver {
         positionData = PositionData(tokenId, liquidity, tickLower, tickUpper);
     }
 
+    /// @notice mint new Uniswap V3 LP position with given parameters
+    /// @param amount0ToMint xxx
+    /// @param amount1ToMint xxx
+    /// @param amount0Min minimum amount0ToMint to put in the position for slippage protection, send amount0ToMint - 0.1%
+    /// @param amount1Min minimum amount1ToMint to put in the position for slippage protection, send amount1ToMint - 0.1%
     function mintNewPosition(
         uint256 amount0ToMint,
         uint256 amount1ToMint,
@@ -162,6 +192,11 @@ contract Ranger is IERC721Receiver {
         _nfpm.safeTransferFrom(address(this), msg.sender, tokenId);
     }
 
+    /// @notice Withdraw all the tokens and the fees from the Uniswap V3 LP Position
+    /// @param amount0Min minimum amount0 to get from token0 for slippage protection, send amount0 from getAmountsForPosition - 0.1%
+    /// @param amount0Min minimum amount1 to get from token1 for slippage protection, send amount1 from getAmountsForPosition - 0.1%
+    /// @return amount0 effective amount0 withdrawn from position
+    /// @return amount1 effective amount1 withdrawn from position
     function withdrawLiquidity(
         uint256 amount0Min,
         uint256 amount1Min
@@ -206,7 +241,11 @@ contract Ranger is IERC721Receiver {
         _nfpm.safeTransferFrom(address(this), msg.sender, positionData.tokenId);
     }
 
-    // Can be used to withdraw tokens or ETH from contract
+    /// @notice Can be used to withdraw tokens or ETH from contract
+    /// @param tokens array of address of every ERC20 tokens held by the contract you want to withdraw and send to _owner
+    /// @param withdrawETH if true the contract will try to send his ETH balance to owner
+    /// @dev The function will unwrap WETH and send in ETH in case of token[i] == addressOfWETH
+    /// @dev Never send more then type(uint256).max tokens in tokens parameter because the loop is unchecked for gas optimization
     function safeWithdraw(
         address[] calldata tokens,
         bool withdrawETH
@@ -237,6 +276,14 @@ contract Ranger is IERC721Receiver {
         }
     }
 
+    /** @dev used in TypeScript script to retrieve current amount of token0 and token1 based on position parameters
+    and Uniswap V3 LP current tick */
+    /// @param poolAddress PoolConfig.pool
+    /// @param liquidity PositionData.liquidity
+    /// @param lowerTick PositionData.tickLower
+    /// @param upperTick PositionData.tickUpper
+    /// @return amount0 amount of token0 in the position at the current Uniswap V3 LP tick
+    /// @return amount1 amount of token1 in the position at the current Uniswap V3 LP tick
     function getAmountsForPosition(
         address poolAddress,
         uint128 liquidity,
@@ -259,6 +306,7 @@ contract Ranger is IERC721Receiver {
         );
     }
 
+    /// @dev If token is WETH, the function will unwrap token and send ETH to owner
     function _transferToken(address token, uint256 amount) internal {
         // If token is Wrapped Ether, unwrapped and send ETH to owner
         if (address(WETH9) == token) {
@@ -269,20 +317,6 @@ contract Ranger is IERC721Receiver {
             }
         } else {
             TransferHelper.safeTransfer(token, msg.sender, amount);
-        }
-    }
-
-    modifier onlyOwner() {
-        if (msg.sender != _owner) {
-            revert Unauthorized();
-        }
-        _;
-    }
-
-    // Needed for WETH unwrapping, because withdraw is going to call with value this contract I guess
-    receive() external payable {
-        if (msg.sender != address(WETH9)) {
-            revert NotWETH();
         }
     }
 }
