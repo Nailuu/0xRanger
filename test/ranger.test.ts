@@ -111,6 +111,8 @@ describe("Ranger", async () => {
             PARAMS.token1amount,
             0,
             0,
+            TickMath.MIN_TICK,
+            TickMath.MAX_TICK
             // slippage[0],
             // slippage[1]
         );

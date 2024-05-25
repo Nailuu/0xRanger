@@ -75,10 +75,12 @@ contract Ranger is IERC721Receiver {
     /// @param token0 address of the first token from the Uniswap V3 LP you want to use
     /// @param token1 address of the second token from the Uniswap V3 LP you want to use
     /// @param fee fee of the Uniswap V3 LP, can be retrieved from (LP Pool).fee
-    /// @dev Contract deployment will revert if a Uniswap V3 LP doesn't exist with given parameters  
-    constructor(address token0, address token1, uint16 fee) {
-        address pool = _factory.getPool(token0, token1, fee);
-        if (pool == 0x0000000000000000000000000000000000000000) {
+    /// @param pool address of Uniswap V3 LP target
+    /** @dev Contract deployment will revert if a Uniswap V3 LP doesn't exist with
+    given parameters or pool return by Uniswap V3 Factory is not the same as "pool" parameter address */
+    constructor(address token0, address token1, uint16 fee, address pool) {
+        address _pool = _factory.getPool(token0, token1, fee);
+        if (_pool == 0x0000000000000000000000000000000000000000 || _pool != pool) {
             revert InvalidPoolConfig();
         }
 
@@ -105,6 +107,29 @@ contract Ranger is IERC721Receiver {
         return this.onERC721Received.selector;
     }
 
+    /// @notice Update PoolConfig structure with new Uniswap V3 LP
+    /// @param token0 address of token0
+    /// @param token1 address of token1
+    /// @param fee fee from the Uniswap V3 LP with pair of token0 and token1
+    /// @param pool address of Uniswap V3 LP target
+    /** @dev Transaction will revert if a Uniswap V3 LP doesn't exist with
+    given parameters or pool return by Uniswap V3 Factory is not the same as "pool" parameter address */
+    function setPoolConfig(address token0, address token1, uint16 fee, address pool) public onlyOwner {
+        address _pool = _factory.getPool(token0, token1, fee);
+        if (_pool == 0x0000000000000000000000000000000000000000 || _pool != pool) {
+            revert InvalidPoolConfig();
+        }
+
+        poolConfig = PoolConfig(_pool, token0, token1, fee);
+    }
+
+    function execute() public onlyOwner {
+        // After test switch set mintNewPosition, withdrawLiquiidty to internal and remove onlyOwner to save gas
+        withdrawLiquidity();
+        // swap();
+        mintNewPosition();
+    }
+
     /// @notice Update PositionData structure with new position parameters
     function _setPositionData(uint256 tokenId) internal {
         (
@@ -126,15 +151,21 @@ contract Ranger is IERC721Receiver {
     }
 
     /// @notice mint new Uniswap V3 LP position with given parameters
-    /// @param amount0ToMint xxx
-    /// @param amount1ToMint xxx
+    /// @param amount0ToMint amount of token0 you want to send in the position
+    /// @param amount1ToMint amount of token1 you want to send in the position
     /// @param amount0Min minimum amount0ToMint to put in the position for slippage protection, send amount0ToMint - 0.1%
     /// @param amount1Min minimum amount1ToMint to put in the position for slippage protection, send amount1ToMint - 0.1%
+    /// @param lowerTick lower tick for Uniswap V3 LP position range, the tick need to be initalized (see TickSpacing)
+    /// @param upperTick upper tick for Uniswap V3 LP position range, the tick need to be initalized (see TickSpacing)
+    /** @dev the minted position's ownership will be transfered to the owner for security reason,
+    the smart contract need to be ApprovedForAll in order to pull the Uniswap V3 Position every time it need */
     function mintNewPosition(
         uint256 amount0ToMint,
         uint256 amount1ToMint,
         uint256 amount0Min,
-        uint256 amount1Min
+        uint256 amount1Min,
+        uint256 lowerTick,
+        uint256 upperTick
     )
         external
         onlyOwner
