@@ -15,7 +15,7 @@ import "./uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import "./uniswap/v3-core/contracts/libraries/TickMath.sol";
 import "./uniswap/v3-core/contracts/libraries/FullMath.sol";
 
-// import "./uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import "./uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "./uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
 import "./uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "./uniswap/v3-periphery/contracts/libraries/PoolAddress.sol";
@@ -26,17 +26,21 @@ import "hardhat/console.sol";
 
 /// @title Ranger
 /// @author Nailu - https://github.com/Nailuu
-/// @notice Semi-automatic contract that update a Uniswap V3 LP position to optimize APR by staying within range 
+/// @notice Semi-automatic contract that update a Uniswap V3 LP position to optimize APR by staying within range and adding fees
 contract Ranger is IERC721Receiver {
     IWETH9 private constant WETH9 =
         IWETH9(0x82aF49447D8a07e3bd95BD0d56f35241523fBab1);
-    address private immutable _owner;
 
     INonfungiblePositionManager private constant _nfpm =
         INonfungiblePositionManager(0xC36442b4a4522E871399CD717aBDD847Ab11FE88);
 
     IUniswapV3Factory private constant _factory =
         IUniswapV3Factory(0x1F98431c8aD98523631AE4a59f267346ea31F984);
+
+    ISwapRouter private constant _router =
+        ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
+
+    address private immutable _owner;
 
     /** @notice Structure to holds the current position data used to determine if
     the position is still in range but also to withdraw position */
@@ -45,19 +49,23 @@ contract Ranger is IERC721Receiver {
         uint128 liquidity;
         int24 tickLower;
         int24 tickUpper;
+        bool active;
     }
 
     /// @notice Structure to holds the current Uniswap V3 LP settings used to swap, create and delete positions
     struct PoolConfig {
         address pool;
-        address token0;
-        address token1;
+        IERC20 token0;
+        IERC20 token1;
         uint16 fee;
     }
 
     PoolConfig public poolConfig;
 
     PositionData public positionData;
+
+    /// = 100 / % - (ex: 100 / 0.1%) = 1000
+    uint16 public slippageTolerance;
 
     error Unauthorized();
     error ContractNotApproved();
@@ -78,15 +86,24 @@ contract Ranger is IERC721Receiver {
     /// @param pool address of Uniswap V3 LP target
     /** @dev Contract deployment will revert if a Uniswap V3 LP doesn't exist with
     given parameters or pool return by Uniswap V3 Factory is not the same as "pool" parameter address */
-    constructor(address token0, address token1, uint16 fee, address pool) {
+    constructor(
+        address token0,
+        address token1,
+        uint16 fee,
+        address pool,
+        uint16 slippage
+    ) {
         address _pool = _factory.getPool(token0, token1, fee);
-        if (_pool == 0x0000000000000000000000000000000000000000 || _pool != pool) {
+        if (
+            _pool == 0x0000000000000000000000000000000000000000 || _pool != pool
+        ) {
             revert InvalidPoolConfig();
         }
 
         _owner = msg.sender;
 
-        poolConfig = PoolConfig(pool, token0, token1, fee);
+        poolConfig = PoolConfig(pool, IERC20(token0), IERC20(token1), fee);
+        slippageTolerance = slippage;
     }
 
     /// @dev Needed for WETH unwrapping, because withdraw is going to call with value this contract I guess
@@ -114,20 +131,64 @@ contract Ranger is IERC721Receiver {
     /// @param pool address of Uniswap V3 LP target
     /** @dev Transaction will revert if a Uniswap V3 LP doesn't exist with
     given parameters or pool return by Uniswap V3 Factory is not the same as "pool" parameter address */
-    function setPoolConfig(address token0, address token1, uint16 fee, address pool) public onlyOwner {
+    function setPoolConfig(
+        address token0,
+        address token1,
+        uint16 fee,
+        address pool
+    ) public onlyOwner {
         address _pool = _factory.getPool(token0, token1, fee);
-        if (_pool == 0x0000000000000000000000000000000000000000 || _pool != pool) {
+        if (
+            _pool == 0x0000000000000000000000000000000000000000 || _pool != pool
+        ) {
             revert InvalidPoolConfig();
         }
 
-        poolConfig = PoolConfig(_pool, token0, token1, fee);
+        poolConfig = PoolConfig(_pool, IERC20(token0), IERC20(token1), fee);
     }
 
-    function execute() public onlyOwner {
+    /// @notice Update slippageTolerance used in _getSlippageAmount
+    /// @param x new slippageTolerance value
+    /// @dev 100 / % - (ex: 100 / 0.1%) = 1000
+    function setSlippageTolerance(uint16 x) external onlyOwner {
+        slippageTolerance = x;
+    }
+
+    function execute(uint256 amount0Min, uint256 amount1Min) public onlyOwner {
         // After test switch set mintNewPosition, withdrawLiquiidty to internal and remove onlyOwner to save gas
-        withdrawLiquidity();
+        // Assume all balance is in ETH
+        if (positionData.active) {
+            withdrawLiquidity(amount0Min, amount1Min);
+        }
         // swap();
-        mintNewPosition();
+
+        // Retrieve amount to mint based on contract balance of both tokens
+        (uint256 amount0ToMint, uint256 amount1ToMint) = (
+            poolConfig.token0.balanceOf(address(this)),
+            poolConfig.token1.balanceOf(address(this))
+        );
+
+        // Get amount - slippage tolerance
+        (
+            uint256 amount0ToMintMin,
+            uint256 amount1ToMintMin
+        ) = _getSlippageAmount(amount0ToMint, amount1ToMint);
+
+        // mintNewPosition(
+        //     amount0ToMint,
+        //     amount1ToMint,
+        //     amount0ToMintMin,
+        //     amount1ToMintMin
+        // );
+    }
+
+    /// @notice returns amounts - slippage tolerance %
+    function _getSlippageAmount(
+        uint256 amount0,
+        uint256 amount1
+    ) internal view returns (uint256 result0, uint256 result1) {
+        result0 = amount0 - (amount0 / slippageTolerance);
+        result1 = amount1 - (amount1 / slippageTolerance);
     }
 
     /// @notice Update PositionData structure with new position parameters
@@ -147,7 +208,13 @@ contract Ranger is IERC721Receiver {
 
         ) = _nfpm.positions(tokenId);
 
-        positionData = PositionData(tokenId, liquidity, tickLower, tickUpper);
+        positionData = PositionData(
+            tokenId,
+            liquidity,
+            tickLower,
+            tickUpper,
+            true
+        );
     }
 
     /// @notice mint new Uniswap V3 LP position with given parameters
@@ -164,10 +231,10 @@ contract Ranger is IERC721Receiver {
         uint256 amount1ToMint,
         uint256 amount0Min,
         uint256 amount1Min,
-        uint256 lowerTick,
-        uint256 upperTick
+        int24 lowerTick,
+        int24 upperTick
     )
-        external
+        public
         onlyOwner
         returns (
             uint256 tokenId,
@@ -178,26 +245,23 @@ contract Ranger is IERC721Receiver {
     {
         // Approve the position manager
         TransferHelper.safeApprove(
-            poolConfig.token0,
+            address(poolConfig.token0),
             address(_nfpm),
             amount0ToMint
         );
         TransferHelper.safeApprove(
-            poolConfig.token1,
+            address(poolConfig.token1),
             address(_nfpm),
             amount1ToMint
         );
 
         (tokenId, liquidity, amount0, amount1) = _nfpm.mint(
             INonfungiblePositionManager.MintParams({
-                token0: poolConfig.token0,
-                token1: poolConfig.token1,
+                token0: address(poolConfig.token0),
+                token1: address(poolConfig.token1),
                 fee: poolConfig.fee,
-                // By using TickMath.MIN_TICK and TickMath.MAX_TICK,
-                // we are providing liquidity across the whole range of the pool.
-                // Not recommended in production.
-                tickLower: TickMath.MIN_TICK + 2,
-                tickUpper: TickMath.MAX_TICK - 2,
+                tickLower: lowerTick,
+                tickUpper: upperTick,
                 amount0Desired: amount0ToMint,
                 amount1Desired: amount1ToMint,
                 // amountXMin - (amountXMin / 1000) to substract 0.1% with small rounding error
@@ -213,11 +277,19 @@ contract Ranger is IERC721Receiver {
 
         // Remove allowance and refund in both assets.
         if (amount0 < amount0ToMint) {
-            TransferHelper.safeApprove(poolConfig.token0, address(_nfpm), 0);
+            TransferHelper.safeApprove(
+                address(poolConfig.token0),
+                address(_nfpm),
+                0
+            );
         }
 
         if (amount1 < amount1ToMint) {
-            TransferHelper.safeApprove(poolConfig.token1, address(_nfpm), 0);
+            TransferHelper.safeApprove(
+                address(poolConfig.token1),
+                address(_nfpm),
+                0
+            );
         }
 
         _nfpm.safeTransferFrom(address(this), msg.sender, tokenId);
@@ -231,7 +303,7 @@ contract Ranger is IERC721Receiver {
     function withdrawLiquidity(
         uint256 amount0Min,
         uint256 amount1Min
-    ) external onlyOwner returns (uint256 amount0, uint256 amount1) {
+    ) public onlyOwner returns (uint256 amount0, uint256 amount1) {
         // require is only for testing to not forget about approval, can be removed in production
         if (!_nfpm.isApprovedForAll(msg.sender, address(this))) {
             revert ContractNotApproved();
@@ -267,6 +339,8 @@ contract Ranger is IERC721Receiver {
                 amount1Max: type(uint128).max
             })
         );
+
+        positionData.active = false;
 
         // Transfer NFT back to owner for safety reasons
         _nfpm.safeTransferFrom(address(this), msg.sender, positionData.tokenId);

@@ -11,7 +11,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const res: DeployResult = await deploy("Ranger", {
         from: deployer,
         log: true,
-        args: [POOL.ARBITRUM.WETH, POOL.ARBITRUM.USDC, POOL.ARBITRUM.FEE],
+        args: [POOL.ARBITRUM.WETH, POOL.ARBITRUM.USDC, POOL.ARBITRUM.FEE, POOL.ARBITRUM.ADDRESS, 1000],
     });
 
     //   console.log("Ranger contract deployed at: ", res.address);
