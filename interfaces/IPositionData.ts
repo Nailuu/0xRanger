@@ -3,4 +3,5 @@ export interface IPositionData {
     liquidity: number;
     tickLower: number;
     tickUpper: number;
+    active: boolean;
 }

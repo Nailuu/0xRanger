@@ -103,6 +103,11 @@ contract Ranger is IERC721Receiver {
         }
     }
 
+    // So if you send basic ETH you can wrap those ETH for swap and mint
+    function wrap() external onlyOwner {
+        // should wrap ETH -> WETH9
+    }
+
     /// @dev Implementing `onERC721Received` so this contract can receive custody of erc721 tokens
     function onERC721Received(
         address,
@@ -248,12 +253,14 @@ contract Ranger is IERC721Receiver {
     /// @notice Withdraw all the tokens and the fees from the Uniswap V3 LP Position
     /// @param amount0Min minimum amount0 to get from token0 for slippage protection, send amount0 from getAmountsForPosition - 0.1%
     /// @param amount0Min minimum amount1 to get from token1 for slippage protection, send amount1 from getAmountsForPosition - 0.1%
-    /// @return amount0 effective amount0 withdrawn from position
-    /// @return amount1 effective amount1 withdrawn from position
+    /// @return amount0 total amount withdrawn from position of token0
+    /// @return amount1 total amount withdrawn from position of token1
+    /// @return fee0 collected fees from token0
+    /// @return fee1 collected fees from token1
     function withdrawLiquidity(
         uint256 amount0Min,
         uint256 amount1Min
-    ) external onlyOwner returns (uint256 amount0, uint256 amount1) {
+    ) external onlyOwner returns (uint256 amount0, uint256 amount1, uint256 fee0, uint256 fee1) {
         if(!positionData.active) {
             revert NoActivePosition();
         }
@@ -271,7 +278,7 @@ contract Ranger is IERC721Receiver {
         // if the amount received after burning is not greater than these minimums, transaction will fail
         // Decrease full liquidity (basically delete position)
         // RETURN fee0 and fee1
-        NFPM.decreaseLiquidity(
+        (fee0, fee1) = NFPM.decreaseLiquidity(
             INonfungiblePositionManager.DecreaseLiquidityParams({
                 tokenId: positionData.tokenId,
                 liquidity: positionData.liquidity,
@@ -294,6 +301,9 @@ contract Ranger is IERC721Receiver {
             })
         );
 
+        // Get collected fees
+        (fee0, fee1) = (amount0 - fee0, amount1 - fee1);
+
         positionData.active = false;
 
         // Transfer NFT back to owner for safety reasons
@@ -306,7 +316,7 @@ contract Ranger is IERC721Receiver {
     /// @param withdrawETH if true the contract will try to send his ETH balance to owner
     /// @dev The function will unwrap WETH and send in ETH in case of token[i] == addressOfWETH
     /// @dev Never send more then type(uint256).max tokens in tokens parameter because the loop is unchecked for gas optimization
-    function safeWithdraw(
+    function collect(
         address[] calldata tokens,
         bool withdrawETH
     ) external onlyOwner {

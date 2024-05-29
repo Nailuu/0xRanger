@@ -181,14 +181,14 @@ describe("Ranger", async () => {
         expect(token1_after_balance).to.greaterThan(token1_before_balance);
     });
 
-    it("Withdraw funds from contract to owner", async () => {
+    it("Collect funds from contract to owner", async () => {
         const token0address = await token0.getAddress();
         const token1address = await token1.getAddress();
 
         // Try to withdraw if not owner, transaction should be reverted
         const notowner = contract.connect(accounts[1]) as Contract;
         await expect(
-            notowner.safeWithdraw([token0address, token1address], false),
+            notowner.collect([token0address, token1address], false),
         ).to.be.revertedWithCustomError(contract, "Unauthorized");
 
         const token0_deployer_before_balance = await ethers.provider.getBalance(
@@ -203,7 +203,7 @@ describe("Ranger", async () => {
         const token1_contract_before_balance =
             await token1.balanceOf(contractAddress);
 
-        const tx: ContractTransactionResponse = await contract.safeWithdraw(
+        const tx: ContractTransactionResponse = await contract.collect(
             [token0address, token1address],
             false,
         );
