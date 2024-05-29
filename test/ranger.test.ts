@@ -70,204 +70,173 @@ describe("Ranger", async () => {
         copy1.transfer(accounts[0].address, PARAMS.token1amount);
     });
 
-    const price_to_tick = (price: number) => {
-        return Math.floor(Math.log(price) / Math.log(1.0001));
-    }
+    it("Pool with given parameters exist", async () => {
+        const factory = await ethers.getContractAt(
+            "IUniswapV3Factory",
+            "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        );
 
-//     q96 = 2**96
-// def price_to_sqrtp(p):
-//     return int(math.sqrt(p) * q96)
+        const pool = await factory.getPool(
+            POOL.ARBITRUM.WETH,
+            POOL.ARBITRUM.USDC,
+            POOL.ARBITRUM.FEE,
+        );
 
-    const priceToSqrtX96 = (price: number): JSBI => {
-        const Q96 = JSBI.leftShift
-        return JSBI.multiply(JSBI.BigInt(Math.sqrt(price)), )
-    }
+        expect(pool).to.not.equal("0x0000000000000000000000000000000000000000");
+    });
 
-    it("TEST", async () => {
-        // function getAmountsForPosition(
-        //     address poolAddress,
-        //     uint128 liquidity,
-        //     int24 lowerTick,
-        //     int24 upperTick
-        const price = 1000;
-        const lprice = price * (1 - 2.5 / 100);
-        const uprice = price * (1 + 2.5 / 100);
-        const ltick = price_to_tick(lprice);
-        const utick = price_to_tick(uprice);
+    it("Mint new position", async () => {
+        const copy0 = (await token0.connect(accounts[0])) as Contract;
+        copy0.transfer(contractAddress, PARAMS.token0amount);
 
-        const liq = 1 * 1e18;
-        
-        const tx = await contract.getAmountsForPosition(POOL.ARBITRUM.ADDRESS, liq.toString(), ltick, utick);
-        console.log(tx);
-    })
+        const copy1 = (await token1.connect(accounts[0])) as Contract;
+        copy1.transfer(contractAddress, PARAMS.token1amount);
 
-    // it("Pool with given parameters exist", async () => {
-    //     const factory = await ethers.getContractAt(
-    //         "IUniswapV3Factory",
-    //         "0x1F98431c8aD98523631AE4a59f267346ea31F984",
-    //     );
+        // Check that the tokens has successfully been transfered to smart contract
+        // expect(await token0.balanceOf(contractAddress)).to.gte(
+        //     PARAMS.token0amount,
+        // );
+        // expect(await token1.balanceOf(contractAddress)).to.gte(
+        //     PARAMS.token1amount,
+        // );
 
-    //     const pool = await factory.getPool(
-    //         POOL.ARBITRUM.WETH,
-    //         POOL.ARBITRUM.USDC,
-    //         POOL.ARBITRUM.FEE,
-    //     );
+        // NEED TO USE SLIPPAGE AFTER BECAUSE FOR NOW THERE IS NO TICK CALCULATION AND WE PROVIVE FOR THE FULL RANGE
+        // const slippage = getSlippageForAmmount(
+        //     PARAMS.slippagePercent,
+        //     PARAMS.token0amount,
+        //     PARAMS.token1amount,
+        // );
 
-    //     expect(pool).to.not.equal("0x0000000000000000000000000000000000000000");
-    // });
+        const tx: ContractTransactionResponse = await contract.mintNewPosition(
+            PARAMS.token0amount,
+            PARAMS.token1amount,
+            0,
+            0,
+            TickMath.MIN_TICK + 2,
+            TickMath.MAX_TICK - 2
+            // slippage[0],
+            // slippage[1]
+        );
 
-    // it("Mint new position", async () => {
-    //     const copy0 = (await token0.connect(accounts[0])) as Contract;
-    //     copy0.transfer(contractAddress, PARAMS.token0amount);
+        const nfmp = await ethers.getContractAt(
+            "INonfungiblePositionManager",
+            "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+        );
 
-    //     const copy1 = (await token1.connect(accounts[0])) as Contract;
-    //     copy1.transfer(contractAddress, PARAMS.token1amount);
+        // VERY IMPORTANT !!!!
+        // Give permission to smart contract to transfer the NFT to itself
+        // Needs to be implemented in prod!
+        await nfmp.setApprovalForAll(contractAddress, true);
 
-    //     // Check that the tokens has successfully been transfered to smart contract
-    //     expect(await token0.balanceOf(contractAddress)).to.gte(
-    //         PARAMS.token0amount,
-    //     );
-    //     expect(await token1.balanceOf(contractAddress)).to.gte(
-    //         PARAMS.token1amount,
-    //     );
+        const positionData = await contract.positionData();
 
-    //     // NEED TO USE SLIPPAGE AFTER BECAUSE FOR NOW THERE IS NO TICK CALCULATION AND WE PROVIVE FOR THE FULL RANGE
-    //     // const slippage = getSlippageForAmmount(
-    //     //     PARAMS.slippagePercent,
-    //     //     PARAMS.token0amount,
-    //     //     PARAMS.token1amount,
-    //     // );
+        tokenId = positionData.tokenId;
+        liquidity = positionData.liquidity;
+    });
 
-    //     const tx: ContractTransactionResponse = await contract.mintNewPosition(
-    //         PARAMS.token0amount,
-    //         PARAMS.token1amount,
-    //         0,
-    //         0,
-    //         TickMath.MIN_TICK + 2,
-    //         TickMath.MAX_TICK - 2
-    //         // slippage[0],
-    //         // slippage[1]
-    //     );
+    it("Collect all fees and withdraw position", async () => {
+        const nfmp = await ethers.getContractAt(
+            "INonfungiblePositionManager",
+            "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+        );
 
-    //     const nfmp = await ethers.getContractAt(
-    //         "INonfungiblePositionManager",
-    //         "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
-    //     );
+        const token0_before_balance = await token0.balanceOf(contractAddress);
+        const token1_before_balance = await token1.balanceOf(contractAddress);
 
-    //     // VERY IMPORTANT !!!!
-    //     // Give permission to smart contract to transfer the NFT to itself
-    //     // Needs to be implemented in prod!
-    //     await nfmp.setApprovalForAll(contractAddress, true);
+        const positionData: IPositionData = await contract.positionData();
+        const poolConfig: IPoolConfig = await contract.poolConfig();
 
-    //     const positionData = await contract.positionData();
+        // Get number of token0 and token1 based on liquidity, pool for sqrtPriceX96, tickLower and tickUpper
+        const result: bigint[] = await contract.getAmountsForPosition(
+            poolConfig.pool,
+            positionData.liquidity,
+            positionData.tickLower,
+            positionData.tickUpper,
+        );
 
-    //     tokenId = positionData.tokenId;
-    //     liquidity = positionData.liquidity;
-    // });
+        // Remove PARAMS.slippagePercent to amount0 and amount1 to get amount0Min and amount1Min
+        const slippage = getSlippageForAmmount(
+            PARAMS.slippagePercent,
+            result[0],
+            result[1],
+        );
 
-    // it("Collect all fees and withdraw position", async () => {
-    //     const nfmp = await ethers.getContractAt(
-    //         "INonfungiblePositionManager",
-    //         "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
-    //     );
+        await contract.withdrawLiquidity(slippage[0], slippage[1]);
 
-    //     const token0_before_balance = await token0.balanceOf(contractAddress);
-    //     const token1_before_balance = await token1.balanceOf(contractAddress);
+        const position = await nfmp.positions(tokenId);
 
-    //     const positionData: IPositionData = await contract.positionData();
-    //     const poolConfig: IPoolConfig = await contract.poolConfig();
+        // Liquidity
+        expect(position[7].toString()).to.equal("0");
 
-    //     // Get number of token0 and token1 based on liquidity, pool for sqrtPriceX96, tickLower and tickUpper
-    //     const result: bigint[] = await contract.getAmountsForPosition(
-    //         poolConfig.pool,
-    //         positionData.liquidity,
-    //         positionData.tickLower,
-    //         positionData.tickUpper,
-    //     );
+        // tokensOwed0 and tokensOwed1
+        expect(position[10].toString()).to.equal("0");
+        expect(position[11].toString()).to.equal("0");
 
-    //     // Remove PARAMS.slippagePercent to amount0 and amount1 to get amount0Min and amount1Min
-    //     const slippage = getSlippageForAmmount(
-    //         PARAMS.slippagePercent,
-    //         result[0],
-    //         result[1],
-    //     );
+        // Check that smart contract received the tokens back
+        const token0_after_balance = await token0.balanceOf(contractAddress);
+        const token1_after_balance = await token1.balanceOf(contractAddress);
 
-    //     await contract.withdrawLiquidity(slippage[0], slippage[1]);
+        // Cannot check with to.equal PARAMS.token0.amount because there is a really small rounding in collect so the value is not exact
+        expect(token0_after_balance).to.greaterThan(token0_before_balance);
+        expect(token1_after_balance).to.greaterThan(token1_before_balance);
+    });
 
-    //     const position = await nfmp.positions(tokenId);
+    it("Withdraw funds from contract to owner", async () => {
+        const token0address = await token0.getAddress();
+        const token1address = await token1.getAddress();
 
-    //     // Liquidity
-    //     expect(position[7].toString()).to.equal("0");
+        // Try to withdraw if not owner, transaction should be reverted
+        const notowner = contract.connect(accounts[1]) as Contract;
+        await expect(
+            notowner.safeWithdraw([token0address, token1address], false),
+        ).to.be.revertedWithCustomError(contract, "Unauthorized");
 
-    //     // tokensOwed0 and tokensOwed1
-    //     expect(position[10].toString()).to.equal("0");
-    //     expect(position[11].toString()).to.equal("0");
+        const token0_deployer_before_balance = await ethers.provider.getBalance(
+            accounts[0].address,
+        );
+        const token1_deployer_before_balance = await token1.balanceOf(
+            accounts[0].address,
+        );
 
-    //     // Check that smart contract received the tokens back
-    //     const token0_after_balance = await token0.balanceOf(contractAddress);
-    //     const token1_after_balance = await token1.balanceOf(contractAddress);
+        const token0_contract_before_balance =
+            await token0.balanceOf(contractAddress);
+        const token1_contract_before_balance =
+            await token1.balanceOf(contractAddress);
 
-    //     // Cannot check with to.equal PARAMS.token0.amount because there is a really small rounding in collect so the value is not exact
-    //     expect(token0_after_balance).to.greaterThan(token0_before_balance);
-    //     expect(token1_after_balance).to.greaterThan(token1_before_balance);
-    // });
+        const tx: ContractTransactionResponse = await contract.safeWithdraw(
+            [token0address, token1address],
+            false,
+        );
 
-    // it("Withdraw funds from contract to owner", async () => {
-    //     const token0address = await token0.getAddress();
-    //     const token1address = await token1.getAddress();
+        const receipt: ContractTransactionReceipt | null = await tx.wait();
 
-    //     // Try to withdraw if not owner, transaction should be reverted
-    //     const notowner = contract.connect(accounts[1]) as Contract;
-    //     await expect(
-    //         notowner.safeWithdraw([token0address, token1address], false),
-    //     ).to.be.revertedWithCustomError(contract, "Unauthorized");
+        const token0_contract_after_balance =
+            await token0.balanceOf(contractAddress);
+        const token1_contract_after_balance =
+            await token1.balanceOf(contractAddress);
 
-    //     const token0_deployer_before_balance = await ethers.provider.getBalance(
-    //         accounts[0].address,
-    //     );
-    //     const token1_deployer_before_balance = await token1.balanceOf(
-    //         accounts[0].address,
-    //     );
+        // Check that contract balance for token0 and token1 is now 0
+        expect(token0_contract_after_balance).to.equal(0);
+        expect(token1_contract_after_balance).to.equal(0);
 
-    //     const token0_contract_before_balance =
-    //         await token0.balanceOf(contractAddress);
-    //     const token1_contract_before_balance =
-    //         await token1.balanceOf(contractAddress);
+        const token0_deployer_after_balance = await ethers.provider.getBalance(
+            accounts[0].address,
+        );
+        const token1_deployer_after_balance = await token1.balanceOf(
+            accounts[0].address,
+        );
 
-    //     const tx: ContractTransactionResponse = await contract.safeWithdraw(
-    //         [token0address, token1address],
-    //         false,
-    //     );
+        const gasUsedInETH = receipt!.gasUsed * receipt!.gasPrice;
 
-    //     const receipt: ContractTransactionReceipt | null = await tx.wait();
-
-    //     const token0_contract_after_balance =
-    //         await token0.balanceOf(contractAddress);
-    //     const token1_contract_after_balance =
-    //         await token1.balanceOf(contractAddress);
-
-    //     // Check that contract balance for token0 and token1 is now 0
-    //     expect(token0_contract_after_balance).to.equal(0);
-    //     expect(token1_contract_after_balance).to.equal(0);
-
-    //     const token0_deployer_after_balance = await ethers.provider.getBalance(
-    //         accounts[0].address,
-    //     );
-    //     const token1_deployer_after_balance = await token1.balanceOf(
-    //         accounts[0].address,
-    //     );
-
-    //     const gasUsedInETH = receipt!.gasUsed * receipt!.gasPrice;
-
-    //     // Check that owner has received the tokens
-    //     // do check to see if weth has been unwrapped
-    //     expect(token0_deployer_after_balance).to.equal(
-    //         token0_deployer_before_balance +
-    //             token0_contract_before_balance -
-    //             gasUsedInETH,
-    //     );
-    //     expect(token1_deployer_after_balance).to.equal(
-    //         token1_deployer_before_balance + token1_contract_before_balance,
-    //     );
-    // });
+        // Check that owner has received the tokens
+        // do check to see if weth has been unwrapped
+        expect(token0_deployer_after_balance).to.equal(
+            token0_deployer_before_balance +
+                token0_contract_before_balance -
+                gasUsedInETH,
+        );
+        expect(token1_deployer_after_balance).to.equal(
+            token1_deployer_before_balance + token1_contract_before_balance,
+        );
+    });
 });

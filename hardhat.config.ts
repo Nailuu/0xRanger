@@ -70,11 +70,11 @@ const config: HardhatUserConfig = {
             },
             chainId: 31337,
         },
-        sepolia: {
-            url: ARBITRUM_SEPOLIA_RPC_URL,
-            accounts: [PRIVATE_KEY!],
-            chainId: 11155111,
-        },
+        // sepolia: {
+        //     url: ARBITRUM_SEPOLIA_RPC_URL,
+        //     accounts: [PRIVATE_KEY!],
+        //     chainId: 11155111,
+        // },
         localhost: {
             url: "http://127.0.0.1:8545/",
             chainId: 31337,
