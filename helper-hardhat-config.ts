@@ -1,3 +1,7 @@
+// docs: https://discordjs.guide/#before-you-begin
+// https://discord.js.org/docs/packages/discord.js/14.15.2
+import { WebhookClient } from "discord.js";
+
 const POOL = {
     ETH_MAINNET: {
         USDC: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -35,4 +39,38 @@ const getSlippageForAmmount = (
     return [result0, result1];
 };
 
-export { POOL, WHALE, getSlippageForAmmount };
+const DISCORD_WEBHOOK_URL: string = process.env.DISCORD_WEBHOOK_URL!;
+
+const sendErrorLogs = async (
+    functionName: string,
+    error: Error,
+): Promise<void> => {
+    const webhookClient: WebhookClient = new WebhookClient({
+        url: DISCORD_WEBHOOK_URL,
+    });
+
+    let header: string = "## " + "[ERROR] " + functionName + "\n";
+    let title: string = error.message + "\n";
+    let errorStack: string = "```fix\n" + error.stack + "```";
+
+    await webhookClient.send({
+        content: header + title + errorStack,
+    });
+};
+
+const sleep = (delay: any) =>
+    new Promise((resolve) => setTimeout(resolve, delay));
+
+const getTimestamp = () => {
+    const now: Date = new Date(Date.now());
+    return "[" + now.toLocaleString("fr-FR") + "]";
+};
+
+export {
+    POOL,
+    WHALE,
+    getSlippageForAmmount,
+    sendErrorLogs,
+    sleep,
+    getTimestamp,
+};

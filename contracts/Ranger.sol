@@ -60,9 +60,17 @@ contract Ranger is IERC721Receiver {
         uint16 fee;
     }
 
-    PoolConfig public poolConfig;
+    /// @notice Structure to holds result of a withdrawLiquidity call
+    struct WithdrawResult {
+        uint256 amount0;
+        uint256 amount1;
+        uint256 fee0;
+        uint256 fee1;
+    }
 
+    PoolConfig public poolConfig;
     PositionData public positionData;
+    WithdrawResult public withdrawResult;
 
     error Unauthorized();
     error ContractNotApproved();
@@ -85,12 +93,7 @@ contract Ranger is IERC721Receiver {
     /// @param pool address of Uniswap V3 LP target
     /** @dev Contract deployment will revert if a Uniswap V3 LP doesn't exist with
     given parameters or pool return by Uniswap V3 Factory is not the same as "pool" parameter address */
-    constructor(
-        address token0,
-        address token1,
-        uint16 fee,
-        address pool
-    ) {
+    constructor(address token0, address token1, uint16 fee, address pool) {
         OWNER = msg.sender;
 
         setPoolConfig(token0, token1, fee, pool);
@@ -232,19 +235,11 @@ contract Ranger is IERC721Receiver {
 
         // Remove allowance and refund in both assets.
         if (amount0 < amount0ToMint) {
-            TransferHelper.safeApprove(
-                poolConfig.token0,
-                address(NFPM),
-                0
-            );
+            TransferHelper.safeApprove(poolConfig.token0, address(NFPM), 0);
         }
 
         if (amount1 < amount1ToMint) {
-            TransferHelper.safeApprove(
-                poolConfig.token1,
-                address(NFPM),
-                0
-            );
+            TransferHelper.safeApprove(poolConfig.token1, address(NFPM), 0);
         }
 
         NFPM.safeTransferFrom(address(this), msg.sender, tokenId);
@@ -253,15 +248,11 @@ contract Ranger is IERC721Receiver {
     /// @notice Withdraw all the tokens and the fees from the Uniswap V3 LP Position
     /// @param amount0Min minimum amount0 to get from token0 for slippage protection, send amount0 from getAmountsForPosition - 0.1%
     /// @param amount0Min minimum amount1 to get from token1 for slippage protection, send amount1 from getAmountsForPosition - 0.1%
-    /// @return amount0 total amount withdrawn from position of token0
-    /// @return amount1 total amount withdrawn from position of token1
-    /// @return fee0 collected fees from token0
-    /// @return fee1 collected fees from token1
     function withdrawLiquidity(
         uint256 amount0Min,
         uint256 amount1Min
-    ) external onlyOwner returns (uint256 amount0, uint256 amount1, uint256 fee0, uint256 fee1) {
-        if(!positionData.active) {
+    ) external onlyOwner {
+        if (!positionData.active) {
             revert NoActivePosition();
         }
 
@@ -278,7 +269,7 @@ contract Ranger is IERC721Receiver {
         // if the amount received after burning is not greater than these minimums, transaction will fail
         // Decrease full liquidity (basically delete position)
         // RETURN fee0 and fee1
-        (fee0, fee1) = NFPM.decreaseLiquidity(
+        (uint256 fee0, uint256 fee1) = NFPM.decreaseLiquidity(
             INonfungiblePositionManager.DecreaseLiquidityParams({
                 tokenId: positionData.tokenId,
                 liquidity: positionData.liquidity,
@@ -292,7 +283,7 @@ contract Ranger is IERC721Receiver {
         // Collect fees + tokens owed from decrease liquidity
         // to get fees earned amount0 - fee0 and amount1 - fee1
         // WARNING: Need to look about rounding...
-        (amount0, amount1) = NFPM.collect(
+        (uint256 amount0, uint256 amount1) = NFPM.collect(
             INonfungiblePositionManager.CollectParams({
                 tokenId: positionData.tokenId,
                 recipient: address(this),
@@ -301,8 +292,12 @@ contract Ranger is IERC721Receiver {
             })
         );
 
-        // Get collected fees
-        (fee0, fee1) = (amount0 - fee0, amount1 - fee1);
+        withdrawResult = WithdrawResult(
+            amount0,
+            amount1,
+            (amount0 - fee0),
+            (amount1 - fee1)
+        );
 
         positionData.active = false;
 

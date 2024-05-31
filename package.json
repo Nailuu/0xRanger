@@ -16,7 +16,10 @@
     "@uniswap/v3-core": "^1.0.1",
     "@uniswap/v3-periphery": "^1.4.4",
     "@uniswap/v3-sdk": "^3.11.2",
+    "discord.js": "^14.15.2",
     "dotenv": "^16.4.5",
+    "google-auth-library": "^9.10.0",
+    "google-spreadsheet": "^4.1.2",
     "hardhat-deploy": "^0.12.4",
     "jsbi": "^4.3.0",
     "solidity-coverage": "^0.8.12"

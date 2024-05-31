@@ -1,7 +1,11 @@
-
 import { ethers, deployments, getNamedAccounts } from "hardhat";
 import { Deployment } from "hardhat-deploy/types";
-import { Contract, ContractTransactionResponse, ContractTransactionReceipt } from "ethers"
+import {
+    Contract,
+    ContractTransactionResponse,
+    ContractTransactionReceipt,
+} from "ethers";
+import { sendErrorLogs } from "../../helper-hardhat-config";
 
 const ARB_WETH: string = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
 
@@ -15,9 +19,12 @@ const withdrawETH: boolean = false;
 
 const collect = async () => {
     const { deployer } = await getNamedAccounts();
-    
+
     const contractDeploymentInfo: Deployment = await deployments.get("Ranger");
-    const contract: Contract = await ethers.getContractAt(contractDeploymentInfo.abi, contractDeploymentInfo.address);
+    const contract: Contract = await ethers.getContractAt(
+        contractDeploymentInfo.abi,
+        contractDeploymentInfo.address,
+    );
 
     const contractAddress: string = await contract.getAddress();
 
@@ -27,10 +34,12 @@ const collect = async () => {
 
     let hasWETH: boolean = false;
 
+    // Loop trough every tokens
     for (let i = 0; i < tokens.length; i++) {
+        // Check if string is a valid ethereum address
         if (!ethers.isAddress(tokens[i])) {
             console.log("Invalid address: ", tokens[i]);
-            return ;
+            return;
         }
 
         if (tokens[i].toLowerCase() == ARB_WETH.toLowerCase()) {
@@ -50,15 +59,23 @@ const collect = async () => {
         console.log(`token${i}: ${symbol}`);
     }
 
-    const deployerBalanceETH: bigint = await ethers.provider.getBalance(deployer);
+    const deployerBalanceETH: bigint =
+        await ethers.provider.getBalance(deployer);
 
     if (DEBUG) {
         console.log("[DEBUG] symbols: \n", symbols);
         console.log("[DEBUG] deployerBalanceBefore: \n", deployerBalanceBefore);
     }
 
-    const tx: ContractTransactionResponse = await contract.collect(tokens, withdrawETH);
-    if (DEBUG) { console.log("[DEBUG] collect(): \n", tx) }
+    const tx: ContractTransactionResponse = await contract.collect(
+        tokens,
+        withdrawETH,
+    );
+    if (DEBUG) {
+        console.log("[DEBUG] collect(): \n", tx);
+    }
+
+    await tx.wait(1);
 
     const receipt: ContractTransactionReceipt | null = await tx.wait();
     const gasUsedInETH: bigint = receipt!.gasUsed * receipt!.gasPrice;
@@ -68,9 +85,11 @@ const collect = async () => {
     // Think about WETH case...
     for (let i = 0; i < tokens.length; i++) {
         if (tokens[i].toLowerCase() != ARB_WETH.toLowerCase()) {
-            const deployerBalanceAfter: bigint = await tokensContract[i].balanceOf(deployer);
+            const deployerBalanceAfter: bigint =
+                await tokensContract[i].balanceOf(deployer);
 
-            const result: bigint = deployerBalanceAfter - deployerBalanceBefore[i];
+            const result: bigint =
+                deployerBalanceAfter - deployerBalanceBefore[i];
 
             console.log(`${symbols[i]}: ${result}`);
         }
@@ -81,13 +100,16 @@ const collect = async () => {
 
         // MAKE SURE THIS IS OK??!! DONT HAVE ALL MY MIND ATM
         const result: bigint = balance - deployerBalanceETH - gasUsedInETH;
-        console.log(`${hasWETH ? (withdrawETH ? "ETH + WETH:" : "WETH") : "ETH:"} ${result}`);
+        console.log(
+            `${hasWETH ? (withdrawETH ? "ETH + WETH:" : "WETH") : "ETH:"} ${result}`,
+        );
     }
-}
+};
 
 collect()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+    .then(() => process.exit(0))
+    .catch(async (error: Error) => {
+        await sendErrorLogs("withdraw.ts", error);
+        console.error(error);
+        process.exit(1);
+    });

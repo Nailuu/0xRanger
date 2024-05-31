@@ -1,7 +1,7 @@
 export interface IPositionData {
-    tokenId: number;
-    liquidity: number;
-    tickLower: number;
-    tickUpper: number;
+    tokenId: bigint;
+    liquidity: bigint;
+    tickLower: bigint;
+    tickUpper: bigint;
     active: boolean;
 }
