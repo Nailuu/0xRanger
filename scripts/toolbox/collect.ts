@@ -5,7 +5,8 @@ import {
     ContractTransactionResponse,
     ContractTransactionReceipt,
 } from "ethers";
-import { sendErrorLogs } from "../../helper-hardhat-config";
+import { sendErrorLogsWebhook } from "../../helper-hardhat-config";
+import { IERC20 } from "../../typechain-types";
 
 const ARB_WETH: string = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
 
@@ -28,7 +29,7 @@ const collect = async () => {
 
     const contractAddress: string = await contract.getAddress();
 
-    const tokensContract: Contract[] = [];
+    const tokensContract: IERC20[] = [];
     const symbols: string[] = [];
     const deployerBalanceBefore: bigint[] = [];
 
@@ -46,7 +47,7 @@ const collect = async () => {
             hasWETH = true;
         }
 
-        const token: Contract = await ethers.getContractAt("IERC20", tokens[i]);
+        const token: IERC20 = await ethers.getContractAt("IERC20", tokens[i]);
         tokensContract.push(token);
 
         // Transactions will fail if it's not an ERC20 address
@@ -109,7 +110,7 @@ const collect = async () => {
 collect()
     .then(() => process.exit(0))
     .catch(async (error: Error) => {
-        await sendErrorLogs("withdraw.ts", error);
+        await sendErrorLogsWebhook("withdraw.ts", error);
         console.error(error);
         process.exit(1);
     });

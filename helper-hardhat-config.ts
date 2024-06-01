@@ -1,6 +1,14 @@
 // docs: https://discordjs.guide/#before-you-begin
 // https://discord.js.org/docs/packages/discord.js/14.15.2
 import { WebhookClient } from "discord.js";
+import {
+    GoogleSpreadsheet,
+    GoogleSpreadsheetRow,
+    GoogleSpreadsheetWorksheet,
+} from "google-spreadsheet";
+import { IWithdrawLogs } from "./interfaces/IWithdrawLogs";
+import { IPoolConfig } from "./interfaces/IPoolConfig";
+import JSBI from "jsbi";
 
 const POOL = {
     ETH_MAINNET: {
@@ -39,22 +47,131 @@ const getSlippageForAmmount = (
     return [result0, result1];
 };
 
-const DISCORD_WEBHOOK_URL: string = process.env.DISCORD_WEBHOOK_URL!;
+const DISCORD_WEBHOOK_URL_ERROR: string =
+    process.env.DISCORD_WEBHOOK_URL_ERROR!;
+const DISCORD_WEBHOOK_URL_WITHDRAW: string =
+    process.env.DISCORD_WEBHOOK_URL_WITHDRAW!;
+const DISCORD_WEBHOOK_URL_MINT: string = process.env.DISCORD_WEBHOOK_URL_MINT!;
+const DISCORD_WEBHOOK_URL_SWAP: string = process.env.DISCORD_WEBHOOK_URL_SWAP!;
+const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY!;
 
-const sendErrorLogs = async (
+const getTokenInfoCoinGecko = async (
+    address: string,
+): Promise<{ price: number; symbol: string; decimals: number }> => {
+    const headers: Headers = new Headers();
+
+    headers.set("X-CG_DEMO_API_KEY", COINGECKO_API_KEY);
+    headers.set("accept", "application/json");
+
+    const request0: RequestInfo = new Request(
+        `https://api.coingecko.com/api/v3/coins/arbitrum-one/contract/${address}`,
+        {
+            method: "GET",
+            headers: headers,
+        },
+    );
+
+    const response: Response = await fetch(request0);
+    const body = await response.json();
+
+    const symbol: string = (body.symbol as string).toUpperCase();
+    const decimals: number = body.detail_platforms.ethereum.decimal_place;
+    const price: number = body.market_data.current_price.usd;
+
+    return { price, symbol, decimals };
+};
+
+const sendErrorLogsWebhook = async (
     functionName: string,
     error: Error,
 ): Promise<void> => {
     const webhookClient: WebhookClient = new WebhookClient({
-        url: DISCORD_WEBHOOK_URL,
+        url: DISCORD_WEBHOOK_URL_ERROR,
     });
 
-    let header: string = "## " + "[ERROR] " + functionName + "\n";
+    let header: string = "### " + functionName + "\n";
     let title: string = error.message + "\n";
     let errorStack: string = "```fix\n" + error.stack + "```";
+    let tag: string = "\n<@&1246532969594748948>";
 
     await webhookClient.send({
-        content: header + title + errorStack,
+        content: header + title + errorStack + tag,
+    });
+};
+
+const sendWithdrawLogsWebhook = async (
+    data: IWithdrawLogs,
+    poolConfig: IPoolConfig,
+): Promise<void> => {
+    const webhookClient: WebhookClient = new WebhookClient({
+        url: DISCORD_WEBHOOK_URL_WITHDRAW,
+    });
+
+    const token0 = await getTokenInfoCoinGecko(poolConfig.token0);
+    const token1 = await getTokenInfoCoinGecko(poolConfig.token1);
+
+    const price_amount0 = (
+        (Number(data.amount0) / 10 ** token0.decimals) *
+        token0.price
+    ).toFixed(4);
+    const price_amount1 = (
+        (Number(data.amount1) / 10 ** token1.decimals) *
+        token1.price
+    ).toFixed(4);
+
+    const price_fee0 = (
+        (Number(data.fee0) / 10 ** token0.decimals) *
+        token0.price
+    ).toFixed(4);
+    const price_fee1 = (
+        (Number(data.fee1) / 10 ** token1.decimals) *
+        token1.price
+    ).toFixed(4);
+
+    let header: string =
+        "### " + "Position was out of range and has been withdrawn\n";
+    let content: string =
+        "```fix\n" +
+        "Amount collected:\n\n" +
+        `${token0.symbol}: ${data.amount0} ($${price_amount0})\n` +
+        `${token1.symbol}: ${data.amount1} ($${price_amount1})` +
+        "\n\nFees collected:\n\n" +
+        `${token0.symbol}: ${data.fee0} ($${price_fee0})\n` +
+        `${token1.symbol}: ${data.fee1} ($${price_fee1})` +
+        "```";
+
+    await webhookClient.send({
+        content: header + content,
+    });
+};
+
+const sendMintLogsWebhook = async (): Promise<void> => {
+    const webhookClient: WebhookClient = new WebhookClient({
+        url: DISCORD_WEBHOOK_URL_MINT,
+    });
+
+    let header: string =
+        "### " + "Position was out of range and has been withdrawn\n";
+    let content: string =
+        "```fix\n" + `fee0: ${data.fee0}\nfee1: ${data.fee1}` + "```";
+
+    await webhookClient.send({
+        content: header + content,
+    });
+};
+
+const sendSwapLogsWebhook = async (): Promise<void> => {
+    const webhookClient: WebhookClient = new WebhookClient({
+        url: DISCORD_WEBHOOK_URL_SWAP,
+    });
+
+    let header: string =
+        "### " + "Position was out of range and has been withdrawn\n";
+    let content: string =
+        "```fix\n" + `fee0: ${data.fee0}\nfee1: ${data.fee1}` + "```";
+
+    await webhookClient.send({
+        content: header + content,
     });
 };
 
@@ -63,14 +180,48 @@ const sleep = (delay: any) =>
 
 const getTimestamp = () => {
     const now: Date = new Date(Date.now());
-    return "[" + now.toLocaleString("fr-FR") + "]";
+    return now.toLocaleString("fr-FR");
+};
+
+const sendWithdrawLogsGSheet = async (
+    doc: GoogleSpreadsheet,
+    data: IWithdrawLogs,
+): Promise<void> => {
+    // you have to share the gsheet to GOOGLE_CLIENT_EMAIL
+    await doc.loadInfo();
+
+    const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Withdraw DB"];
+
+    const row: GoogleSpreadsheetRow = await sheet.addRow({
+        timestamp: data.timestamp,
+        tokenId: data.tokenId.toString(),
+        gasUsed: data.gasUsed.toString(),
+        tick: data.tick.toString(),
+        lowerTick: data.lowerTick.toString(),
+        upperTick: data.upperTick.toString(),
+        amount0: data.amount0.toString(),
+        amount1: data.amount1.toString(),
+        fee0: data.fee0.toString(),
+        fee1: data.fee1.toString(),
+        b_amount0: data.b_amount0.toString(),
+        b_amount1: data.b_amount1.toString(),
+        a_amount0: data.a_amount0.toString(),
+        a_amount1: data.a_amount1.toString(),
+    });
+
+    await row.save();
+
+    console.log(`[${getTimestamp()}] - New withdraw row on GSheets addded`);
 };
 
 export {
     POOL,
     WHALE,
     getSlippageForAmmount,
-    sendErrorLogs,
+    sendErrorLogsWebhook,
     sleep,
     getTimestamp,
+    sendWithdrawLogsGSheet,
+    sendWithdrawLogsWebhook,
+    getTokenInfoCoinGecko,
 };

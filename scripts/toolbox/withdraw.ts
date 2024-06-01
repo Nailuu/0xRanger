@@ -3,7 +3,7 @@ import { Deployment } from "hardhat-deploy/types";
 import { Contract } from "ethers";
 import { IPoolConfig } from "../../interfaces/IPoolConfig";
 import { IPositionData } from "../../interfaces/IPositionData";
-import { sendErrorLogs } from "../../helper-hardhat-config";
+import { sendErrorLogsWebhook } from "../../helper-hardhat-config";
 
 const SLIPPAGE: number = 1 - 0.1 / 100;
 const DEBUG: boolean = true;
@@ -78,7 +78,7 @@ const withdraw = async () => {
 withdraw()
     .then(() => process.exit(0))
     .catch(async (error: Error) => {
-        await sendErrorLogs("withdraw.ts", error);
+        await sendErrorLogsWebhook("withdraw.ts", error);
         console.error(error);
         process.exit(1);
     });
