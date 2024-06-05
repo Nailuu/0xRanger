@@ -52,33 +52,33 @@ const TICK_RANGE_CHECK_TIMEOUT: number = 5;
 const SLIPPAGE: number = 1 - 0.1 / 100;
 
 const bot = async (): Promise<void> => {
-    const tmp: IWithdrawLogs = {
-        timestamp: getTimestamp(),
-        tokenId: 541234412n,
-        gasUsed: 122n,
-        tick: 85000n,
-        lowerTick: 83000n,
-        upperTick: 88000n,
-        amount0: 53453453453454348329n,
-        amount1: 53453453n,
-        fee0: 4324234489430424n,
-        fee1: 90654n,
-        b_amount0: 534534534534543n,
-        b_amount1: 534534534534543n,
-        a_amount0: 534534534534543n,
-        a_amount1: 534534534534543n,
-    };
+    // const tmp: IWithdrawLogs = {
+    //     timestamp: getTimestamp(),
+    //     tokenId: 541234412n,
+    //     gasUsed: 122n,
+    //     tick: 85000n,
+    //     lowerTick: 83000n,
+    //     upperTick: 88000n,
+    //     amount0: 53453453453454348329n,
+    //     amount1: 53453453n,
+    //     fee0: 4324234489430424n,
+    //     fee1: 90654n,
+    //     b_amount0: 534534534534543n,
+    //     b_amount1: 534534534534543n,
+    //     a_amount0: 534534534534543n,
+    //     a_amount1: 534534534534543n,
+    // };
 
-    const tmp2: IPoolConfig = {
-        pool: "test",
-        token0: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-        token1: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
-        fee: 500n,
-    }
+    // const tmp2: IPoolConfig = {
+    //     pool: "test",
+    //     token0: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+    //     token1: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    //     fee: 500n,
+    // }
 
-    await sendWithdrawLogsWebhook(tmp, tmp2);
+    // await sendWithdrawLogsWebhook(tmp, tmp2);
 
-    return;
+    // return;
 
     const contract: Ranger = await ethers.getContractAt(
         "Ranger",
@@ -86,7 +86,7 @@ const bot = async (): Promise<void> => {
     );
 
     const poolConfig: IPoolConfig = await contract.poolConfig();
-    const positionData: IPositionData = await contract.positionData();
+    let positionData: IPositionData = await contract.positionData();
 
     const token0: IERC20 = await ethers.getContractAt(
         "IERC20",
@@ -135,6 +135,7 @@ const bot = async (): Promise<void> => {
                 Number(amounts.amount1) * SLIPPAGE,
             );
 
+            // withdraw liquidity and collect fees
             const withdrawTx: ContractTransactionResponse =
                 await contract.withdrawLiquidity(amount0Min, amount1Min);
 
@@ -148,11 +149,6 @@ const bot = async (): Promise<void> => {
 
             const a_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
             const a_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
-
-            // send webhook
-            await sendWithdrawLogsWebhook();
-
-            // withdraw liquidity
 
             const data: IWithdrawLogs = {
                 timestamp: getTimestamp(),
@@ -171,6 +167,9 @@ const bot = async (): Promise<void> => {
                 a_amount1: a_amount1,
             };
 
+            // send logs to discord webhook
+            await sendWithdrawLogsWebhook(data, poolConfig);
+
             // send logs to google sheets
             await sendWithdrawLogsGSheet(doc, data);
 
@@ -186,9 +185,32 @@ const bot = async (): Promise<void> => {
         await sleep(60 * TICK_RANGE_CHECK_TIMEOUT * 1000);
     }
 
+    const amount0ToMint: number = 100;
+    const amount1ToMint: number = 100;
+    const amount0Min: number = Math.ceil(Number(amount0ToMint) * SLIPPAGE);
+    const amount1Min: number = Math.ceil(Number(amount1ToMint) * SLIPPAGE);
+
+    const slot0: ISlot0 = await pool.slot0();
+    const lowerTick: bigint = slot0.tick - 100n;
+    const upperTick: bigint = slot0.tick + 100n;
+
     // calculate new tick range
     // create small position;
     // wait 1 block
+    const mintTx: ContractTransactionResponse = await contract.mintNewPosition(
+        amount0ToMint,
+        amount1ToMint,
+        amount0Min,
+        amount1Min,
+        lowerTick,
+        upperTick,
+    );
+
+    const mintReceipt: ContractTransactionReceipt | null = await mintTx.wait(1);
+    const mintGasUsed = mintReceipt!.gasUsed * mintReceipt!.gasPrice;
+
+    // swap and provide liquidity (in one transaction)
+    // POST to GSheets API with data
 
     const nfmp: INonfungiblePositionManager = await ethers.getContractAt(
         "INonfungiblePositionManager",
@@ -197,14 +219,11 @@ const bot = async (): Promise<void> => {
 
     // approveForAll
     // wait 1 block
-    const nfmp_tx: ContractTransactionResponse = await nfmp.setApprovalForAll(
+    const nfmpTx: ContractTransactionResponse = await nfmp.setApprovalForAll(
         CONTRACT_ADDRESS,
         true,
     );
-    await nfmp_tx.wait(1);
-
-    // swap and provide liquidity (in one transaction)
-    // POST to GSheets API with data
+    await nfmpTx.wait(1);
 
     // sleep
     await sleep(60 * TICK_RANGE_CHECK_TIMEOUT * 1000);

@@ -21,6 +21,7 @@ import "./uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "./uniswap/v3-periphery/contracts/libraries/PoolAddress.sol";
 import "./uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "./uniswap/v3-periphery/contracts/interfaces/external/IWETH9.sol";
+import "./uniswap/v3-periphery/contracts/libraries/OracleLibrary.sol";
 
 import "hardhat/console.sol";
 
@@ -384,4 +385,44 @@ contract Ranger is IERC721Receiver {
             TransferHelper.safeTransfer(token, msg.sender, amount);
         }
     }
+
+    // TWAP give the average tick on the given period of time to avoid 
+    function getSqrtTwapX96(
+        address pool,
+        uint32 twapInterval
+    ) public view returns (uint160 sqrtPriceX96) {
+        if (twapInterval == 0) {
+            // return the current price if twapInterval == 0
+            (sqrtPriceX96, , , , , , ) = IUniswapV3Pool(pool).slot0();
+        } else {
+            uint32[] memory secondsAgos = new uint32[](2);
+            secondsAgos[0] = twapInterval; // from (before)
+            secondsAgos[1] = 0; // to (now)
+
+            (int56[] memory tickCumulatives, ) = IUniswapV3Pool(pool).observe(
+                secondsAgos
+            );
+
+            int56 tickCumulativesDelta = tickCumulatives[1] -
+                tickCumulatives[0];
+
+            int24 arithmeticMeanTick = int24(
+                tickCumulativesDelta / int56(uint56(twapInterval))
+            );
+
+            if (
+                tickCumulativesDelta < 0 &&
+                (tickCumulativesDelta % int56(uint56(twapInterval)) != 0)
+            ) arithmeticMeanTick--;
+
+            // tick(imprecise as it's an integer) to price
+            sqrtPriceX96 = TickMath.getSqrtRatioAtTick(arithmeticMeanTick);
+        }
+    }
+
+    // function getPriceX96FromSqrtPriceX96(
+    //     uint160 sqrtPriceX96
+    // ) public pure returns (uint256 priceX96) {
+    //     return FullMath.mulDiv(sqrtPriceX96, sqrtPriceX96, FixedPoint96.Q96);
+    // }
 }

@@ -33,52 +33,52 @@ import math
 #         # print("tick0: ", tick0)
 #         # print("tick1: ", tick1)
 
-def price_to_tick(p):
-    return math.floor(math.log(p, 1.0001))
+# def price_to_tick(p):
+#     return math.floor(math.log(p, 1.0001))
 
-q96 = 2**96
-def price_to_sqrtp(p):
-    return int(math.sqrt(p) * q96)
+# q96 = 2**96
+# def price_to_sqrtp(p):
+#     return int(math.sqrt(p) * q96)
 
-price = float(sys.argv[1])
-lprice = price * (1 - 2.5 / 100)
-uprice = price * (1 + 2.5 / 100)
-print(lprice, uprice)
+# price = float(sys.argv[1])
+# lprice = price * (1 - 2.5 / 100)
+# uprice = price * (1 + 2.5 / 100)
+# print(lprice, uprice)
 
-sqrtp_low = price_to_sqrtp(lprice)
-sqrtp_cur = price_to_sqrtp(price)
-sqrtp_upp = price_to_sqrtp(uprice)
+# sqrtp_low = price_to_sqrtp(lprice)
+# sqrtp_cur = price_to_sqrtp(price)
+# sqrtp_upp = price_to_sqrtp(uprice)
 
-def liquidity0(amount, pa, pb):
-    if pa > pb:
-        pa, pb = pb, pa
-    return (amount * (pa * pb) / q96) / (pb - pa)
+# def liquidity0(amount, pa, pb):
+#     if pa > pb:
+#         pa, pb = pb, pa
+#     return (amount * (pa * pb) / q96) / (pb - pa)
 
-def liquidity1(amount, pa, pb):
-    if pa > pb:
-        pa, pb = pb, pa
-    return amount * q96 / (pb - pa)
+# def liquidity1(amount, pa, pb):
+#     if pa > pb:
+#         pa, pb = pb, pa
+#     return amount * q96 / (pb - pa)
 
-amount_eth = 1 * 1e18
-
-
-liq = amount_eth
-
-def calc_amount0(liq, pa, pb):
-    if pa > pb:
-        pa, pb = pb, pa
-    return int(liq * q96 * (pb - pa) / pa / pb)
+# amount_eth = 1 * 1e18
 
 
-def calc_amount1(liq, pa, pb):
-    if pa > pb:
-        pa, pb = pb, pa
-    return int(liq * (pb - pa) / q96)
+# liq = amount_eth
 
-amount0 = calc_amount0(liq, sqrtp_upp, sqrtp_cur)
-amount1 = calc_amount1(liq, sqrtp_low, sqrtp_cur)
+# def calc_amount0(liq, pa, pb):
+#     if pa > pb:
+#         pa, pb = pb, pa
+#     return int(liq * q96 * (pb - pa) / pa / pb)
 
-print(amount0 / 1e18, amount1 / 1e18)
+
+# def calc_amount1(liq, pa, pb):
+#     if pa > pb:
+#         pa, pb = pb, pa
+#     return int(liq * (pb - pa) / q96)
+
+# amount0 = calc_amount0(liq, sqrtp_upp, sqrtp_cur)
+# amount1 = calc_amount1(liq, sqrtp_low, sqrtp_cur)
+
+# print(amount0 / 1e18, amount1 / 1e18)
 
 # price0 = 3394.7865
 # curr_price = 3880.32
@@ -123,3 +123,47 @@ print(amount0 / 1e18, amount1 / 1e18)
 # print((lower_tick / (lower_tick + upper_tick)) * 100, (upper_tick / (lower_tick + upper_tick)) * 100)
 
 # print("low: ", lower_price, " - high: ", upper_price)
+
+# https://ethereum.stackexchange.com/questions/99425/calculate-deposit-amount-when-adding-to-a-liquidity-pool-in-uniswap-v3
+
+def liquidityX(x, price, price_high):
+    return x * math.sqrt(price) * math.sqrt(price_high) / (math.sqrt(price_high) - math.sqrt(price))
+
+def liquidityY(y, price, price_low):
+    return y / (math.sqrt(price) - math.sqrt(price_low))
+
+def getY(LiquidityX, price, price_low):
+    return LiquidityX * (math.sqrt(price) - math.sqrt(price_low))
+
+def getX(LiquidityY, price, price_high):
+    return LiquidityY * (math.sqrt(price) - math.sqrt(price_high))
+
+x = 1
+y = 2500
+price = 3795.48
+price_high = 3881.5485
+price_low = 3692.2524
+
+price2 = 1 / price
+price_low2 = 1 / price_low
+price_high2 = 1 / price_high
+
+L1 = liquidityX(x, price, price_high)
+L2 = liquidityY(y, price, price_low)
+
+Y = getY(L1, price, price_low)
+X = getX(L2, price2, price_high2)
+
+print(x, "->", Y)
+print(y, "->", X)
+
+ratio1 = price / (price + Y) * 100
+ratio2 = Y / (price + Y) * 100
+
+sqrtPriceX96 = 4398119394579009462326040
+
+Q96 = 2 ** 96
+price = (sqrtPriceX96 / Q96) ** 2
+print(price / (10 ** 6 / 10 ** 18))
+
+print("ratio:", ratio1, "-", ratio2)

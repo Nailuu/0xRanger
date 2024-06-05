@@ -9,6 +9,9 @@ import {
 import { IWithdrawLogs } from "./interfaces/IWithdrawLogs";
 import { IPoolConfig } from "./interfaces/IPoolConfig";
 import JSBI from "jsbi";
+import { MapWithLowerCaseKey } from "@uniswap/smart-order-router";
+import { Ranger } from "./typechain-types";
+import { TickMath, nearestUsableTick } from "@uniswap/v3-sdk";
 
 const POOL = {
     ETH_MAINNET: {
@@ -214,6 +217,44 @@ const sendWithdrawLogsGSheet = async (
     console.log(`[${getTimestamp()}] - New withdraw row on GSheets addded`);
 };
 
+const getPriceOracle = async (contract: Ranger, pool: string, token0decimals: number, token1decimals: number): Promise<number> => {
+    const sqrtPriceX96: bigint = await contract.getSqrtTwapX96(pool, 60);
+    const Q96: number = 2 ** 96;
+
+    const price: number = ((Number(sqrtPriceX96) / Q96) ** 2) / (10 ** token0decimals / 10 ** token1decimals);
+
+    return (price);
+}
+
+const priceToSqrtPriceX96 = (price: number, token0decimals: number, token1decimals: number): number => {
+    const Q96: number = 2 ** 96;
+
+    const tmp: number = price * (10 ** token0decimals / 10 ** token1decimals);
+    const result: number = Math.sqrt(tmp) * Q96;
+
+    console.log(price);
+    console.log(TickMath.getTickAtSqrtRatio(JSBI.BigInt(result)));
+
+    return (result);
+}
+
+// def liquidityX(x, price, price_high):
+// return x * math.sqrt(price) * math.sqrt(price_high) / (math.sqrt(price_high) - math.sqrt(price))
+
+const getLiquidityX = (x: number, price: number, priceHigh: number): number => {
+    const result: number =
+        (x * Math.sqrt(price) * Math.sqrt(priceHigh)) /
+        (Math.sqrt(priceHigh) - Math.sqrt(price));
+
+    return result;
+};
+
+const getLiquidityY = (y: number, price: number, priceLow: number): number => {
+    const result: number = y / (Math.sqrt(price) - Math.sqrt(priceLow));
+        
+    return result;
+};
+
 export {
     POOL,
     WHALE,
@@ -224,4 +265,6 @@ export {
     sendWithdrawLogsGSheet,
     sendWithdrawLogsWebhook,
     getTokenInfoCoinGecko,
+    getPriceOracle,
+    priceToSqrtPriceX96
 };

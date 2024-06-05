@@ -10,11 +10,12 @@ import {
     Log,
 } from "ethers";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { POOL, WHALE, getSlippageForAmmount } from "../helper-hardhat-config";
+import { POOL, WHALE, getPriceOracle, getSlippageForAmmount, priceToSqrtPriceX96 } from "../helper-hardhat-config";
 import { IPositionData } from "../interfaces/IPositionData";
 import { IPoolConfig } from "../interfaces/IPoolConfig";
 import { TickMath } from "@uniswap/v3-sdk";
 import JSBI from "jsbi";
+import { IERC20, Ranger } from "../typechain-types";
 
 const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY;
 
@@ -27,14 +28,14 @@ const PARAMS = {
 };
 
 describe("Ranger", async () => {
-    let contract: Contract;
+    let contract: Ranger;
     let contractAddress: string;
     let accounts: HardhatEthersSigner[];
-    let token0: Contract;
-    let token1: Contract;
+    let token0: IERC20;
+    let token1: IERC20;
 
     let tokenId: string;
-    let liquidity: number;
+    let liquidity: bigint;
 
     before(async () => {
         await deployments.fixture(["all"]);
@@ -42,7 +43,7 @@ describe("Ranger", async () => {
         accounts = await ethers.getSigners();
 
         const tmp3 = await deployments.get("Ranger");
-        contract = await ethers.getContractAt(tmp3.abi, tmp3.address);
+        contract = await ethers.getContractAt("Ranger", tmp3.address);
 
         contractAddress = await contract.getAddress();
 
@@ -63,10 +64,10 @@ describe("Ranger", async () => {
             PARAMS.token1amount,
         );
 
-        const copy0 = (await token0.connect(token0whale)) as Contract;
+        const copy0 = token0.connect(token0whale);
         copy0.transfer(accounts[0].address, PARAMS.token0amount);
 
-        const copy1 = (await token1.connect(token1whale)) as Contract;
+        const copy1 = token1.connect(token1whale);
         copy1.transfer(accounts[0].address, PARAMS.token1amount);
     });
 
@@ -86,10 +87,10 @@ describe("Ranger", async () => {
     });
 
     it("Mint new position", async () => {
-        const copy0 = (await token0.connect(accounts[0])) as Contract;
+        const copy0 = token0.connect(accounts[0]);
         copy0.transfer(contractAddress, PARAMS.token0amount);
 
-        const copy1 = (await token1.connect(accounts[0])) as Contract;
+        const copy1 = token1.connect(accounts[0]);
         copy1.transfer(contractAddress, PARAMS.token1amount);
 
         // Check that the tokens has successfully been transfered to smart contract
@@ -130,7 +131,7 @@ describe("Ranger", async () => {
 
         const positionData = await contract.positionData();
 
-        tokenId = positionData.tokenId;
+        tokenId = positionData.tokenId.toString();
         liquidity = positionData.liquidity;
     });
 
@@ -186,7 +187,7 @@ describe("Ranger", async () => {
         const token1address = await token1.getAddress();
 
         // Try to withdraw if not owner, transaction should be reverted
-        const notowner = contract.connect(accounts[1]) as Contract;
+        const notowner = contract.connect(accounts[1]);
         await expect(
             notowner.collect([token0address, token1address], false),
         ).to.be.revertedWithCustomError(contract, "Unauthorized");
@@ -239,4 +240,10 @@ describe("Ranger", async () => {
             token1_deployer_before_balance + token1_contract_before_balance,
         );
     });
+
+    it("Price Oracle", async () => {
+        const result = await getPriceOracle(contract, POOL.ARBITRUM.ADDRESS, 6, 18);
+
+        console.log(result);
+    })
 });
