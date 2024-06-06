@@ -13,6 +13,7 @@ import { MapWithLowerCaseKey } from "@uniswap/smart-order-router";
 import { Ranger } from "./typechain-types";
 import { TickMath, nearestUsableTick } from "@uniswap/v3-sdk";
 import { bigint } from "hardhat/internal/core/params/argumentTypes";
+import { IPriceRangeInfo } from "./interfaces/IPriceRangeInfo";
 
 const POOL = {
     ETH_MAINNET: {
@@ -251,7 +252,7 @@ const tickToPrice = (tick: number, token0decimals: number, token1decimals: numbe
 }
 
 // if percent = 2.5, then price range = price + 2.5% and price - 2.5% rounded with nearest usable tick
-const priceToRange = async (contract: Ranger, pool: string, token0decimals: number, token1decimals: number, tickSpacing: number, percent: number): Promise<[number, number, number, number]>    => {
+const priceToRange = async (contract: Ranger, pool: string, token0decimals: number, token1decimals: number, tickSpacing: number, percent: number): Promise<IPriceRangeInfo>    => {
     const price: number = await getPriceOracle(contract, pool, token0decimals, token1decimals);
 
     let lowerPrice: number = price * (1 - percent / 100);
@@ -263,25 +264,58 @@ const priceToRange = async (contract: Ranger, pool: string, token0decimals: numb
     lowerPrice = tickToPrice(lowerTick, token0decimals, token1decimals);
     upperPrice = tickToPrice(upperTick, token0decimals, token1decimals);
 
-    return [lowerTick, upperTick, lowerPrice, upperPrice];
+    const ratio0: number = 0;
+    const ratio1: number = 0;
+
+    return { lowerTick, upperTick, lowerPrice, upperPrice, price, ratio0, ratio1 };
+};
+
+// x = token0 amount / 10 ** decimals, so 1 Eth = x = 1
+const getLiquidityToken0 = (amount0: number, price: number, priceHigh: number): number => {
+    return ((amount0 * Math.sqrt(price) * Math.sqrt(priceHigh)) / (Math.sqrt(priceHigh) - Math.sqrt(price)));
+};
+
+const getLiquidityToken1 = (amount1: number, price: number, priceLow: number): number => {
+    return (amount1 / (Math.sqrt(price) - Math.sqrt(priceLow)));
+};
+
+const getAmountOfToken1ForLiquidity0 = (liquidity0: number, price: number, priceLow: number): number => {
+    return (liquidity0 * (Math.sqrt(price) - Math.sqrt(priceLow)));
 }
 
-// def liquidityX(x, price, price_high):
-// return x * math.sqrt(price) * math.sqrt(price_high) / (math.sqrt(price_high) - math.sqrt(price))
+const getAmountOfToken0ForLiquidity1 = (liquidity1: number, price: number, priceHigh: number): number => {
+    return (liquidity1 * (Math.sqrt(1 / price) - Math.sqrt(1 / priceHigh)));
+}
 
-const getLiquidityX = (x: number, price: number, priceHigh: number): number => {
-    const result: number =
-        (x * Math.sqrt(price) * Math.sqrt(priceHigh)) /
-        (Math.sqrt(priceHigh) - Math.sqrt(price));
+const getAmountOfToken1ForToken0 = (amount0: number, decimals0: number, decimals1: number, params: IPriceRangeInfo): number => {
+    const priceHigh: number = tickToPrice(params.upperTick, decimals0, decimals1);
+    const priceLow: number = tickToPrice(params.lowerTick, decimals0, decimals1);
 
-    return result;
-};
+    const liquidity0 = getLiquidityToken0(amount0, params.price, priceHigh);
+    const amount1: number = getAmountOfToken1ForLiquidity0(liquidity0, params.price, priceLow);
 
-const getLiquidityY = (y: number, price: number, priceLow: number): number => {
-    const result: number = y / (Math.sqrt(price) - Math.sqrt(priceLow));
+    return (amount1 * (10 ** decimals1));
+}
 
-    return result;
-};
+const getAmountOfToken0ForToken1 = (amount1: number, decimals0: number, decimals1: number, params: IPriceRangeInfo): number => {
+    const priceHigh: number = tickToPrice(params.upperTick, decimals0, decimals1);
+    const priceLow: number = tickToPrice(params.lowerTick, decimals0, decimals1);
+
+    const liquidity1 = getLiquidityToken1(amount1, params.price, priceLow);
+    const amount0: number = getAmountOfToken0ForLiquidity1(liquidity1, params.price, priceHigh);
+
+    return (amount0 * (10 ** decimals0));
+}
+
+const getRatioOfTokensAtPrice = (decimals0: number, decimals1: number, params: IPriceRangeInfo): IPriceRangeInfo => {
+    const amount1: number = getAmountOfToken1ForToken0(1, decimals0, decimals1, params) / (10 ** decimals1);
+    console.log(amount1);
+
+    params.ratio0 = (params.price / (params.price + amount1)) * 100;
+    params.ratio1 = (amount1 / (params.price + amount1)) * 100;
+
+    return (params);
+}
 
 export {
     POOL,
@@ -296,5 +330,9 @@ export {
     getPriceOracle,
     priceToSqrtPriceX96,
     priceToNearestUsableTick,
-    priceToRange
+    priceToRange,
+    getAmountOfToken0ForToken1,
+    getAmountOfToken1ForToken0,
+    tickToPrice,
+    getRatioOfTokensAtPrice
 };

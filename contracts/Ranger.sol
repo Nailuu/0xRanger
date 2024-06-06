@@ -15,7 +15,7 @@ import "./uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import "./uniswap/v3-core/contracts/libraries/TickMath.sol";
 import "./uniswap/v3-core/contracts/libraries/FullMath.sol";
 
-// import "./uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+ import "./uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "./uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
 import "./uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "./uniswap/v3-periphery/contracts/libraries/PoolAddress.sol";
@@ -38,8 +38,8 @@ contract Ranger is IERC721Receiver {
     IUniswapV3Factory private constant FACTORY =
         IUniswapV3Factory(0x1F98431c8aD98523631AE4a59f267346ea31F984);
 
-    // ISwapRouter private constant ROUTER =
-    //     ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
+    ISwapRouter private constant ROUTER =
+        ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
 
     address private immutable OWNER;
 
@@ -76,6 +76,7 @@ contract Ranger is IERC721Receiver {
     error Unauthorized();
     error ContractNotApproved();
     error FailedToSendETH();
+    error FailedToWrapETH();
     error NotWETH();
     error InvalidPoolConfig();
     error NoActivePosition();
@@ -420,9 +421,28 @@ contract Ranger is IERC721Receiver {
         }
     }
 
-    // function getPriceX96FromSqrtPriceX96(
-    //     uint160 sqrtPriceX96
-    // ) public pure returns (uint256 priceX96) {
-    //     return FullMath.mulDiv(sqrtPriceX96, sqrtPriceX96, FixedPoint96.Q96);
-    // }
+    function swap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMinimum) external onlyOwner {
+        TransferHelper.safeApprove(tokenIn, address(ROUTER), amountIn);
+
+        // https://docs.uniswap.org/contracts/v3/guides/swaps/single-swaps
+        ROUTER.exactInputSingle(ISwapRouter.ExactInputSingleParams({
+            tokenIn: tokenIn,
+            tokenOut: tokenOut,
+            fee: poolConfig.fee,
+            recipient: address(this),
+            deadline: block.timestamp,
+            amountIn: amountIn,
+            amountOutMinimum: amountOutMinimum,
+            sqrtPriceLimitX96: 0
+        }));
+    }
+
+    function wrap() external onlyOwner {
+        if (address(this).balance > 0) {
+            (bool sent, ) = address(WETH9).call{value: address(this).balance}("");
+            if (!sent) {
+                revert FailedToWrapETH();
+            }
+        }
+    }
 }

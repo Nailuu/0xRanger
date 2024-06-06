@@ -139,10 +139,10 @@ def getX(LiquidityY, price, price_high):
     return LiquidityY * (math.sqrt(price) - math.sqrt(price_high))
 
 x = 1
-y = 2500
-price = 3795.48
-price_high = 3881.5485
-price_low = 3692.2524
+y = 8000
+price = 3805.28
+price_high = 3901.0039
+price_low = 3710.7589
 
 price2 = 1 / price
 price_low2 = 1 / price_low
@@ -157,13 +157,13 @@ X = getX(L2, price2, price_high2)
 print(x, "->", Y)
 print(y, "->", X)
 
-ratio1 = price / (price + Y) * 100
-ratio2 = Y / (price + Y) * 100
-
-sqrtPriceX96 = 4398119394579009462326040
-
-Q96 = 2 ** 96
-price = (sqrtPriceX96 / Q96) ** 2
-print(price / (10 ** 6 / 10 ** 18))
-
-print("ratio:", ratio1, "-", ratio2)
+# ratio1 = price / (price + Y) * 100
+# ratio2 = Y / (price + Y) * 100
+#
+# sqrtPriceX96 = 4398119394579009462326040
+#
+# Q96 = 2 ** 96
+# price = (sqrtPriceX96 / Q96) ** 2
+# print(price / (10 ** 6 / 10 ** 18))
+#
+# print("ratio:", ratio1, "-", ratio2)

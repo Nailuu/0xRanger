@@ -16,13 +16,19 @@ import {
     getPriceOracle,
     getSlippageForAmmount,
     priceToSqrtPriceX96,
-    priceToNearestUsableTick, priceToRange,
+    priceToNearestUsableTick,
+    priceToRange,
+    getLiquidityToken0,
+    tickToPrice,
+    getAmountOfToken1ForLiquidity0,
+    getAmountOfToken1ForToken0, getAmountOfToken0ForToken1, getRatioOfTokensAtPrice,
 } from "../helper-hardhat-config";
 import { IPositionData } from "../interfaces/IPositionData";
 import { IPoolConfig } from "../interfaces/IPoolConfig";
 import { TickMath } from "@uniswap/v3-sdk";
 import JSBI from "jsbi";
 import { IERC20, IUniswapV3Pool, Ranger } from "../typechain-types";
+import { IPriceRangeInfo } from "../interfaces/IPriceRangeInfo";
 
 const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY;
 
@@ -250,10 +256,13 @@ describe("Ranger", async () => {
 
     it("Price Oracle", async () => {
         // Write strong tests for all new function
-        const test = await priceToRange(contract, POOL.ARBITRUM.ADDRESS, 18, 6, 10, 2.5);
-        console.log(test);
-        // const tick = priceToNearestUsableTick(result, 18, 6, 10);
-        // console.log((1.0001 ** tick) / ((10 ** 18) / (10 ** 6)));
-        // console.log(result);
+        const params: IPriceRangeInfo = await priceToRange(contract, POOL.ARBITRUM.ADDRESS, 18, 6, 10, 2.5);
+
+        console.log(getRatioOfTokensAtPrice(18, 6, params));
+
+        // const amount1: number = getAmountOfToken1ForToken0(1, 18, 6, params);
+        // const amount0: number = getAmountOfToken0ForToken1(2500, 18, 6, params);
+        //
+        // console.log(amount0 / 1e18, amount1 / 1e6);
     })
 });
