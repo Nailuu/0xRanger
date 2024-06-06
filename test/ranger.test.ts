@@ -10,12 +10,19 @@ import {
     Log,
 } from "ethers";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { POOL, WHALE, getPriceOracle, getSlippageForAmmount, priceToSqrtPriceX96 } from "../helper-hardhat-config";
+import {
+    POOL,
+    WHALE,
+    getPriceOracle,
+    getSlippageForAmmount,
+    priceToSqrtPriceX96,
+    priceToNearestUsableTick, priceToRange,
+} from "../helper-hardhat-config";
 import { IPositionData } from "../interfaces/IPositionData";
 import { IPoolConfig } from "../interfaces/IPoolConfig";
 import { TickMath } from "@uniswap/v3-sdk";
 import JSBI from "jsbi";
-import { IERC20, Ranger } from "../typechain-types";
+import { IERC20, IUniswapV3Pool, Ranger } from "../typechain-types";
 
 const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY;
 
@@ -65,10 +72,10 @@ describe("Ranger", async () => {
         );
 
         const copy0 = token0.connect(token0whale);
-        copy0.transfer(accounts[0].address, PARAMS.token0amount);
+        await copy0.transfer(accounts[0].address, PARAMS.token0amount);
 
         const copy1 = token1.connect(token1whale);
-        copy1.transfer(accounts[0].address, PARAMS.token1amount);
+        await copy1.transfer(accounts[0].address, PARAMS.token1amount);
     });
 
     it("Pool with given parameters exist", async () => {
@@ -88,10 +95,10 @@ describe("Ranger", async () => {
 
     it("Mint new position", async () => {
         const copy0 = token0.connect(accounts[0]);
-        copy0.transfer(contractAddress, PARAMS.token0amount);
+        await copy0.transfer(contractAddress, PARAMS.token0amount);
 
         const copy1 = token1.connect(accounts[0]);
-        copy1.transfer(contractAddress, PARAMS.token1amount);
+        await copy1.transfer(contractAddress, PARAMS.token1amount);
 
         // Check that the tokens has successfully been transfered to smart contract
         // expect(await token0.balanceOf(contractAddress)).to.gte(
@@ -242,8 +249,11 @@ describe("Ranger", async () => {
     });
 
     it("Price Oracle", async () => {
-        const result = await getPriceOracle(contract, POOL.ARBITRUM.ADDRESS, 6, 18);
-
-        console.log(result);
+        // Write strong tests for all new function
+        const test = await priceToRange(contract, POOL.ARBITRUM.ADDRESS, 18, 6, 10, 2.5);
+        console.log(test);
+        // const tick = priceToNearestUsableTick(result, 18, 6, 10);
+        // console.log((1.0001 ** tick) / ((10 ** 18) / (10 ** 6)));
+        // console.log(result);
     })
 });

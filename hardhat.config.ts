@@ -66,7 +66,7 @@ const config: HardhatUserConfig = {
                 enabled: true,
                 // url: ETHEREUM_RPC_URL!,
                 url: ARBITRUM_RPC_URL!,
-                blockNumber: 212279290,
+                blockNumber: 218839870,
             },
             chainId: 31337,
         },

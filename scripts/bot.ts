@@ -1,7 +1,6 @@
 import { ethers } from "hardhat";
 import {
     getTimestamp,
-    getTokenInfoCoinGecko,
     sendErrorLogsWebhook,
     sendWithdrawLogsGSheet,
     sendWithdrawLogsWebhook,
@@ -9,8 +8,6 @@ import {
 } from "../helper-hardhat-config";
 import { IPoolConfig } from "../interfaces/IPoolConfig";
 import {
-    Contract,
-    TransactionReceipt,
     ContractTransactionResponse,
     ContractTransactionReceipt,
 } from "ethers";
@@ -86,7 +83,7 @@ const bot = async (): Promise<void> => {
     );
 
     const poolConfig: IPoolConfig = await contract.poolConfig();
-    let positionData: IPositionData = await contract.positionData();
+    const positionData: IPositionData = await contract.positionData();
 
     const token0: IERC20 = await ethers.getContractAt(
         "IERC20",

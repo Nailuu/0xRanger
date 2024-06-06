@@ -4,6 +4,9 @@ gas-report.txt
 .todo
 /.config
 
+# Jet Brains
+/.idea
+
 # VS Code
 /.vscode
 

@@ -12,6 +12,7 @@ import JSBI from "jsbi";
 import { MapWithLowerCaseKey } from "@uniswap/smart-order-router";
 import { Ranger } from "./typechain-types";
 import { TickMath, nearestUsableTick } from "@uniswap/v3-sdk";
+import { bigint } from "hardhat/internal/core/params/argumentTypes";
 
 const POOL = {
     ETH_MAINNET: {
@@ -92,10 +93,10 @@ const sendErrorLogsWebhook = async (
         url: DISCORD_WEBHOOK_URL_ERROR,
     });
 
-    let header: string = "### " + functionName + "\n";
-    let title: string = error.message + "\n";
-    let errorStack: string = "```fix\n" + error.stack + "```";
-    let tag: string = "\n<@&1246532969594748948>";
+    const header: string = "### " + functionName + "\n";
+    const title: string = error.message + "\n";
+    const errorStack: string = "```fix\n" + error.stack + "```";
+    const tag: string = "\n<@&1246532969594748948>";
 
     await webhookClient.send({
         content: header + title + errorStack + tag,
@@ -131,9 +132,9 @@ const sendWithdrawLogsWebhook = async (
         token1.price
     ).toFixed(4);
 
-    let header: string =
+    const header: string =
         "### " + "Position was out of range and has been withdrawn\n";
-    let content: string =
+    const content: string =
         "```fix\n" +
         "Amount collected:\n\n" +
         `${token0.symbol}: ${data.amount0} ($${price_amount0})\n` +
@@ -153,9 +154,9 @@ const sendMintLogsWebhook = async (): Promise<void> => {
         url: DISCORD_WEBHOOK_URL_MINT,
     });
 
-    let header: string =
+    const header: string =
         "### " + "Position was out of range and has been withdrawn\n";
-    let content: string =
+    const content: string =
         "```fix\n" + `fee0: ${data.fee0}\nfee1: ${data.fee1}` + "```";
 
     await webhookClient.send({
@@ -168,9 +169,9 @@ const sendSwapLogsWebhook = async (): Promise<void> => {
         url: DISCORD_WEBHOOK_URL_SWAP,
     });
 
-    let header: string =
+    const header: string =
         "### " + "Position was out of range and has been withdrawn\n";
-    let content: string =
+    const content: string =
         "```fix\n" + `fee0: ${data.fee0}\nfee1: ${data.fee1}` + "```";
 
     await webhookClient.send({
@@ -178,7 +179,7 @@ const sendSwapLogsWebhook = async (): Promise<void> => {
     });
 };
 
-const sleep = (delay: any) =>
+const sleep = (delay: number) =>
     new Promise((resolve) => setTimeout(resolve, delay));
 
 const getTimestamp = () => {
@@ -214,28 +215,55 @@ const sendWithdrawLogsGSheet = async (
 
     await row.save();
 
-    console.log(`[${getTimestamp()}] - New withdraw row on GSheets addded`);
+    console.log(`[${getTimestamp()}] - New withdraw row on GSheets added`);
 };
 
 const getPriceOracle = async (contract: Ranger, pool: string, token0decimals: number, token1decimals: number): Promise<number> => {
     const sqrtPriceX96: bigint = await contract.getSqrtTwapX96(pool, 60);
     const Q96: number = 2 ** 96;
 
-    const price: number = ((Number(sqrtPriceX96) / Q96) ** 2) / (10 ** token0decimals / 10 ** token1decimals);
+    const price: number = ((Number(sqrtPriceX96) / Q96) ** 2) * (10 ** token0decimals / 10 ** token1decimals);
 
     return (price);
-}
+};
 
 const priceToSqrtPriceX96 = (price: number, token0decimals: number, token1decimals: number): number => {
     const Q96: number = 2 ** 96;
 
-    const tmp: number = price * (10 ** token0decimals / 10 ** token1decimals);
+    const tmp: number = price / (10 ** token0decimals / 10 ** token1decimals);
     const result: number = Math.sqrt(tmp) * Q96;
 
-    console.log(price);
-    console.log(TickMath.getTickAtSqrtRatio(JSBI.BigInt(result)));
+    return (result);
+};
+
+const priceToNearestUsableTick = (price: number, token0decimals: number, token1decimals: number, tickSpacing: number): number => {
+    const sqrtPriceX96: bigint = BigInt(priceToSqrtPriceX96(price, token0decimals, token1decimals));
+
+    const tick: number = TickMath.getTickAtSqrtRatio(JSBI.BigInt(sqrtPriceX96.toString()));
+
+    const result: number = nearestUsableTick(tick, tickSpacing);
 
     return (result);
+}
+
+const tickToPrice = (tick: number, token0decimals: number, token1decimals: number): number => {
+    return ((1.0001 ** tick) * ((10 ** token0decimals) / (10 ** token1decimals)));
+}
+
+// if percent = 2.5, then price range = price + 2.5% and price - 2.5% rounded with nearest usable tick
+const priceToRange = async (contract: Ranger, pool: string, token0decimals: number, token1decimals: number, tickSpacing: number, percent: number): Promise<[number, number, number, number]>    => {
+    const price: number = await getPriceOracle(contract, pool, token0decimals, token1decimals);
+
+    let lowerPrice: number = price * (1 - percent / 100);
+    let upperPrice: number = price * (1 + percent / 100);
+
+    const lowerTick: number = priceToNearestUsableTick(lowerPrice, token0decimals, token1decimals, tickSpacing);
+    const upperTick: number = priceToNearestUsableTick(upperPrice, token0decimals, token1decimals, tickSpacing);
+
+    lowerPrice = tickToPrice(lowerTick, token0decimals, token1decimals);
+    upperPrice = tickToPrice(upperTick, token0decimals, token1decimals);
+
+    return [lowerTick, upperTick, lowerPrice, upperPrice];
 }
 
 // def liquidityX(x, price, price_high):
@@ -251,7 +279,7 @@ const getLiquidityX = (x: number, price: number, priceHigh: number): number => {
 
 const getLiquidityY = (y: number, price: number, priceLow: number): number => {
     const result: number = y / (Math.sqrt(price) - Math.sqrt(priceLow));
-        
+
     return result;
 };
 
@@ -266,5 +294,7 @@ export {
     sendWithdrawLogsWebhook,
     getTokenInfoCoinGecko,
     getPriceOracle,
-    priceToSqrtPriceX96
+    priceToSqrtPriceX96,
+    priceToNearestUsableTick,
+    priceToRange
 };
