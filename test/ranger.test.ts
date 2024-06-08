@@ -14,8 +14,14 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
     POOL,
     WHALE,
+    NFMP_ADDRESS,
     getLiquidityToken0,
-    getAmountOfToken1ForLiquidity0, getSlippageForAmount, priceToRange,
+    getAmountOfToken1ForLiquidity0,
+    getSlippageForAmount,
+    priceToRange,
+    getRatioOfTokensAtPrice,
+    swapToken1ToToken0,
+    swapToken0ToToken1,
 } from "../helper-hardhat-config";
 import { IPositionData } from "../types/IPositionData";
 import { IPoolConfig } from "../types/IPoolConfig";
@@ -147,7 +153,7 @@ describe("Ranger", async () => {
 
         const nfmp: INonfungiblePositionManager = await ethers.getContractAt(
             "INonfungiblePositionManager",
-            "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+            NFMP_ADDRESS,
         );
 
         const position = await nfmp.positions(newPositionData.tokenId);
@@ -170,16 +176,21 @@ describe("Ranger", async () => {
     it("Withdraw position", async (): Promise<void> => {
         await expect(contract.withdrawLiquidity(0, 0)).to.be.revertedWithCustomError(contract, "NoActivePosition");
 
-        const nfmp = await ethers.getContractAt(
-            "INonfungiblePositionManager",
-            "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
-        );
+        const poolConfig: IPoolConfig = await contract.poolConfig();
 
-        const token0_before_balance = await token0.balanceOf(contractAddress);
-        const token1_before_balance = await token1.balanceOf(contractAddress);
+        const info: IPriceRangeInfo = await priceToRange(contract, poolConfig.pool, decimals0, decimals1, Number(poolConfig.fee), 2.5, 2.5);
+        await contract.mintNewPosition(PARAMS.token0amount, PARAMS.token1amount, 0, 0, info.lowerTick, info.upperTick);
+
+        const nfmp: INonfungiblePositionManager = await ethers.getContractAt(
+            "INonfungiblePositionManager",
+            NFMP_ADDRESS,
+        );
+        await nfmp.setApprovalForAll(contractAddress, true);
 
         const positionData: IPositionData = await contract.positionData();
-        const poolConfig: IPoolConfig = await contract.poolConfig();
+
+        const token0_before_balance: bigint = await token0.balanceOf(contractAddress);
+        const token1_before_balance: bigint = await token1.balanceOf(contractAddress);
 
         // Get number of token0 and token1 based on liquidity, pool for sqrtPriceX96, tickLower and tickUpper
         const result: bigint[] = await contract.getAmountsForPosition(
@@ -190,7 +201,7 @@ describe("Ranger", async () => {
         );
 
         // Remove PARAMS.slippagePercent to amount0 and amount1 to get amount0Min and amount1Min
-        const slippage = getSlippageForAmount(
+        const slippage: bigint[] = getSlippageForAmount(
             PARAMS.slippagePercent,
             result[0],
             result[1],
@@ -198,7 +209,7 @@ describe("Ranger", async () => {
 
         await contract.withdrawLiquidity(slippage[0], slippage[1]);
 
-        const position = await nfmp.positions(tokenId);
+        const position = await nfmp.positions(positionData.tokenId);
 
         // Liquidity
         expect(position[7].toString()).to.equal("0");
@@ -208,34 +219,64 @@ describe("Ranger", async () => {
         expect(position[11].toString()).to.equal("0");
 
         // Check that smart contract received the tokens back
-        const token0_after_balance = await token0.balanceOf(contractAddress);
-        const token1_after_balance = await token1.balanceOf(contractAddress);
+        const token0_after_balance: bigint = await token0.balanceOf(contractAddress);
+        const token1_after_balance: bigint = await token1.balanceOf(contractAddress);
 
         // Cannot check with to.equal PARAMS.token0.amount because there is a really small rounding in collect so the value is not exact
         expect(token0_after_balance).to.greaterThan(token0_before_balance);
         expect(token1_after_balance).to.greaterThan(token1_before_balance);
     });
 
-    it("Collect funds from contract to owner", async () => {
-        const token0address = await token0.getAddress();
-        const token1address = await token1.getAddress();
+    it("Collect funds", async (): Promise<void> => {
+        const poolConfig: IPoolConfig = await contract.poolConfig();
+
+        const info: IPriceRangeInfo = await priceToRange(contract, poolConfig.pool, decimals0, decimals1, Number(poolConfig.fee), 2.5, 2.5);
+        await contract.mintNewPosition(PARAMS.token0amount, PARAMS.token1amount, 0, 0, info.lowerTick, info.upperTick);
+
+        const nfmp: INonfungiblePositionManager = await ethers.getContractAt(
+            "INonfungiblePositionManager",
+            NFMP_ADDRESS,
+        );
+        await nfmp.setApprovalForAll(contractAddress, true);
+
+        const positionData: IPositionData = await contract.positionData();
+
+        // Get number of token0 and token1 based on liquidity, pool for sqrtPriceX96, tickLower and tickUpper
+        const result: bigint[] = await contract.getAmountsForPosition(
+            poolConfig.pool,
+            positionData.liquidity,
+            positionData.tickLower,
+            positionData.tickUpper,
+        );
+
+        // Remove PARAMS.slippagePercent to amount0 and amount1 to get amount0Min and amount1Min
+        const slippage: bigint[] = getSlippageForAmount(
+            PARAMS.slippagePercent,
+            result[0],
+            result[1],
+        );
+
+        await contract.withdrawLiquidity(slippage[0], slippage[1]);
+
+        const token0address: string = await token0.getAddress();
+        const token1address: string = await token1.getAddress();
 
         // Try to withdraw if not owner, transaction should be reverted
-        const notowner = contract.connect(accounts[1]);
+        const notowner: Ranger = contract.connect(accounts[1]);
         await expect(
             notowner.collect([token0address, token1address], false),
         ).to.be.revertedWithCustomError(contract, "Unauthorized");
 
-        const token0_deployer_before_balance = await ethers.provider.getBalance(
+        const token0_deployer_before_balance: bigint = await ethers.provider.getBalance(
             accounts[0].address,
         );
-        const token1_deployer_before_balance = await token1.balanceOf(
+        const token1_deployer_before_balance: bigint = await token1.balanceOf(
             accounts[0].address,
         );
 
-        const token0_contract_before_balance =
+        const token0_contract_before_balance: bigint =
             await token0.balanceOf(contractAddress);
-        const token1_contract_before_balance =
+        const token1_contract_before_balance: bigint =
             await token1.balanceOf(contractAddress);
 
         const tx: ContractTransactionResponse = await contract.collect(
@@ -245,23 +286,23 @@ describe("Ranger", async () => {
 
         const receipt: ContractTransactionReceipt | null = await tx.wait();
 
-        const token0_contract_after_balance =
+        const token0_contract_after_balance: bigint =
             await token0.balanceOf(contractAddress);
-        const token1_contract_after_balance =
+        const token1_contract_after_balance: bigint =
             await token1.balanceOf(contractAddress);
 
         // Check that contract balance for token0 and token1 is now 0
         expect(token0_contract_after_balance).to.equal(0);
         expect(token1_contract_after_balance).to.equal(0);
 
-        const token0_deployer_after_balance = await ethers.provider.getBalance(
+        const token0_deployer_after_balance: bigint = await ethers.provider.getBalance(
             accounts[0].address,
         );
-        const token1_deployer_after_balance = await token1.balanceOf(
+        const token1_deployer_after_balance: bigint = await token1.balanceOf(
             accounts[0].address,
         );
 
-        const gasUsedInETH = receipt!.gasUsed * receipt!.gasPrice;
+        const gasUsedInETH: bigint = receipt!.gasUsed * receipt!.gasPrice;
 
         // Check that owner has received the tokens
         // do check to see if weth has been unwrapped
@@ -275,7 +316,35 @@ describe("Ranger", async () => {
         );
     });
 
-    it("Swap", async () => {
+    it("Swap", async (): Promise<void> => {
+        const b_amount0: bigint = await token0.balanceOf(contractAddress);
+        const b_amount1: bigint = await token1.balanceOf(contractAddress);
 
+        const info: IPriceRangeInfo = await priceToRange(contract, poolConfig.pool, decimals0, decimals1, Number(poolConfig.fee), 2.5, 2.5);
+        getRatioOfTokensAtPrice(decimals0, decimals1, info);
+
+        const weight0: number = Number(b_amount0) / (10 ** decimals0) * info.price;
+        const weight1: number = Number(b_amount1) / (10 ** decimals1);
+
+        const totalWeightInY: number = weight0 + weight1;
+
+        const swap0: number = totalWeightInY * (info.ratio0 / 100) / info.price * (10 ** decimals0);
+        const swap1: number = totalWeightInY * (info.ratio1 / 100) * (10 ** decimals1);
+
+        if (BigInt(Math.floor(swap0)) > b_amount0) {
+            await swapToken1ToToken0(contract, poolConfig, swap0, b_amount0, info.price, decimals0, decimals1);
+        }
+        else if (BigInt(Math.floor(swap1)) > b_amount1) {
+            await swapToken0ToToken1(contract, poolConfig, swap1, b_amount1, info.price, decimals0, decimals1);
+        }
+
+        const a_amount0: bigint = await token0.balanceOf(contractAddress);
+        const a_amount1: bigint = await token1.balanceOf(contractAddress);
+
+        const test0: number = 100 - ((Number(a_amount0) / (10 ** decimals0)) / (swap0 / (10 ** decimals0)) * 100);
+        const test1: number = 100 - ((Number(a_amount1) / (10 ** decimals1)) / (swap1 / (10 ** decimals1)) * 100);
+
+        expect(test0).to.lte(0.05);
+        expect(test1).to.lte(0.05);
     })
 });

@@ -5,7 +5,7 @@ import {
     sendErrorLogsWebhook, sendMintLogsGSheet, sendMintLogsWebhook, sendSwapLogsGSheet, sendSwapLogsWebhook,
     sendWithdrawLogsGSheet,
     sendWithdrawLogsWebhook,
-    sleep, swapToken0ToToken1, swapToken1ToToken0, NFMP_ADDRESS
+    sleep, swapToken0ToToken1, swapToken1ToToken0, NFMP_ADDRESS, WETH_ADDRESS
 } from "../helper-hardhat-config";
 import { IPoolConfig } from "../types/IPoolConfig";
 import {
@@ -155,7 +155,8 @@ const bot = async (): Promise<void> => {
 
     // wrap ETH if balance of ETH > 0 to get WETH
     const balanceETH: bigint = await ethers.provider.getBalance(CONTRACT_ADDRESS);
-    if (balanceETH > 0) {
+    if (balanceETH > 0 && (poolConfig.token0 == WETH_ADDRESS || poolConfig.token1 == WETH_ADDRESS)) {
+        // Take in consideration gasUsed for approval is not computed in Google Sheets
         await contract.wrap();
     }
 

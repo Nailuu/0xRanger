@@ -44,6 +44,7 @@ const WHALE = {
 };
 
 const NFMP_ADDRESS: string = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88";
+const WETH_ADDRESS: string = "0x3368e17064C9BA5D6f1F93C4c678bea00cc78555";
 
 const DISCORD_WEBHOOK_URL_ERROR: string =
     process.env.DISCORD_WEBHOOK_URL_ERROR!;
@@ -410,7 +411,7 @@ const swapToken0ToToken1 = async (contract: Ranger, poolConfig: IPoolConfig, swa
     const amountIn: bigint = BigInt(Math.floor((swap1 - Number(balance1)) / (10 ** decimals1) / price * (10 ** decimals0)));
     const amountOutMinimum: bigint = BigInt(Math.floor((swap1 - Number(balance1)) * (1 - (0.5 / 100))));
 
-    const swap: ContractTransactionResponse = await contract.swap(poolConfig.token1, poolConfig.token0, amountIn, amountOutMinimum);
+    const swap: ContractTransactionResponse = await contract.swap(poolConfig.token0, poolConfig.token1, amountIn, amountOutMinimum);
     const timestamp: string = getTimestamp();
     const swapReceipt: ContractTransactionReceipt | null = await swap.wait(1);
     const gasUsed: bigint = swapReceipt!.gasUsed * swapReceipt!.gasPrice;
@@ -422,6 +423,7 @@ export {
     POOL,
     WHALE,
     NFMP_ADDRESS,
+    WETH_ADDRESS,
     getSlippageForAmount,
     sendErrorLogsWebhook,
     sleep,

@@ -111,6 +111,7 @@ contract Ranger is IERC721Receiver {
         }
     }
 
+    /// @notice this function is called whenever the contrat has a ETH balance > 0, just before swapping to wrap ETH into WETH if WETH is one of tokens
     function wrap() external onlyOwner {
         if (address(this).balance > 0) {
             (bool sent, ) = address(WETH9).call{value: address(this).balance}("");
@@ -386,11 +387,15 @@ contract Ranger is IERC721Receiver {
         }
     }
 
-    // TWAP give the average tick on the given period of time to avoid 
+    /// @dev The function return the sqrtPriceX96 based on the average tick on the given period of time
+    /// @param pool Address of the pool
+    /** @param twapInterval Time in seconds to observe the pool
+    (e.g. 60 will average the tick of the last 60 seconds) **/
+    /// @return sqrtPriceX96 Price based on average tic in .X96
     function getSqrtTwapX96(
         address pool,
         uint32 twapInterval
-    ) public view returns (uint160 sqrtPriceX96) {
+    ) external view returns (uint160 sqrtPriceX96) {
         if (twapInterval == 0) {
             // return the current price if twapInterval == 0
             (sqrtPriceX96, , , , , , ) = IUniswapV3Pool(pool).slot0();
@@ -420,6 +425,14 @@ contract Ranger is IERC721Receiver {
         }
     }
 
+    /// @notice Execute a single swap from tokenX to tokenY with an input of tokenX
+    /// @param tokenIn Address of the tokenX (input)
+    /// @param tokenOut Address of the tokenY (output)
+    /// @param amountIn Amount of tokenX that you want to swap to tokenY
+    /** @dev Careful amountIn has to be in decimals of the tokenIn
+    (e.g. for WETH, 18 decimals and you want to provide 1 WETH = 1 * 1e18)
+    **/
+    /// @param amountOutMinimum Safety minimum amount to receive in tokenY otherwise revert
     function swap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMinimum) external onlyOwner {
         TransferHelper.safeApprove(tokenIn, address(ROUTER), amountIn);
 
