@@ -1,8 +1,8 @@
 import { ethers, deployments } from "hardhat";
 import { Deployment } from "hardhat-deploy/types";
 import { Contract } from "ethers";
-import { IPoolConfig } from "../../interfaces/IPoolConfig";
-import { IPositionData } from "../../interfaces/IPositionData";
+import { IPoolConfig } from "../../types/IPoolConfig";
+import { IPositionData } from "../../types/IPositionData";
 import { sendErrorLogsWebhook } from "../../helper-hardhat-config";
 
 const SLIPPAGE: number = 1 - 0.1 / 100;

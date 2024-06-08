@@ -6,14 +6,16 @@ import {
     GoogleSpreadsheetRow,
     GoogleSpreadsheetWorksheet,
 } from "google-spreadsheet";
-import { IWithdrawLogs } from "./interfaces/IWithdrawLogs";
-import { IPoolConfig } from "./interfaces/IPoolConfig";
+import { IWithdrawLogs } from "./types/IWithdrawLogs";
+import { IPoolConfig } from "./types/IPoolConfig";
 import JSBI from "jsbi";
 import { MapWithLowerCaseKey } from "@uniswap/smart-order-router";
-import { Ranger } from "./typechain-types";
-import { TickMath, nearestUsableTick } from "@uniswap/v3-sdk";
+import { IUniswapV3Factory, Ranger } from "./typechain-types";
+import { TickMath, nearestUsableTick, FACTORY_ADDRESS } from "@uniswap/v3-sdk";
 import { bigint } from "hardhat/internal/core/params/argumentTypes";
-import { IPriceRangeInfo } from "./interfaces/IPriceRangeInfo";
+import { IPriceRangeInfo } from "./types/IPriceRangeInfo";
+import { ethers } from "hardhat";
+import { ContractTransactionReceipt, ContractTransactionResponse } from "ethers";
 
 const POOL = {
     ETH_MAINNET: {
@@ -165,6 +167,10 @@ const sendMintLogsWebhook = async (): Promise<void> => {
     });
 };
 
+const sendMintLogsGSheet = async (): Promise<void> => {
+
+}
+
 const sendSwapLogsWebhook = async (): Promise<void> => {
     const webhookClient: WebhookClient = new WebhookClient({
         url: DISCORD_WEBHOOK_URL_SWAP,
@@ -179,6 +185,10 @@ const sendSwapLogsWebhook = async (): Promise<void> => {
         content: header + content,
     });
 };
+
+const sendSwapLogsGSheet = async (): Promise<void> => {
+
+}
 
 const sleep = (delay: number) =>
     new Promise((resolve) => setTimeout(resolve, delay));
@@ -219,11 +229,11 @@ const sendWithdrawLogsGSheet = async (
     console.log(`[${getTimestamp()}] - New withdraw row on GSheets added`);
 };
 
-const getPriceOracle = async (contract: Ranger, pool: string, token0decimals: number, token1decimals: number): Promise<number> => {
+const getPriceOracle = async (contract: Ranger, pool: string, decimals0: number, decimals1: number): Promise<number> => {
     const sqrtPriceX96: bigint = await contract.getSqrtTwapX96(pool, 60);
     const Q96: number = 2 ** 96;
 
-    const price: number = ((Number(sqrtPriceX96) / Q96) ** 2) * (10 ** token0decimals / 10 ** token1decimals);
+    const price: number = ((Number(sqrtPriceX96) / Q96) ** 2) * (10 ** decimals0 / 10 ** decimals1);
 
     return (price);
 };
@@ -251,18 +261,31 @@ const tickToPrice = (tick: number, token0decimals: number, token1decimals: numbe
     return ((1.0001 ** tick) * ((10 ** token0decimals) / (10 ** token1decimals)));
 }
 
+const getTickSpacing = (fee: number): number => {
+    if (fee == 500)
+        return (10);
+    else if (fee == 3000)
+        return (60);
+    else if (fee == 10000)
+        return (200);
+    else
+        return (1);
+}
+
 // if percent = 2.5, then price range = price + 2.5% and price - 2.5% rounded with nearest usable tick
-const priceToRange = async (contract: Ranger, pool: string, token0decimals: number, token1decimals: number, tickSpacing: number, percent: number): Promise<IPriceRangeInfo>    => {
-    const price: number = await getPriceOracle(contract, pool, token0decimals, token1decimals);
+const priceToRange = async (contract: Ranger, pool: string, decimals0: number, decimals1: number, fee: number, lowerPercent: number, upperPercent: number): Promise<IPriceRangeInfo>    => {
+    const price: number = await getPriceOracle(contract, pool, decimals0, decimals1);
 
-    let lowerPrice: number = price * (1 - percent / 100);
-    let upperPrice: number = price * (1 + percent / 100);
+    let lowerPrice: number = price * (1 - lowerPercent / 100);
+    let upperPrice: number = price * (1 + upperPercent / 100);
 
-    const lowerTick: number = priceToNearestUsableTick(lowerPrice, token0decimals, token1decimals, tickSpacing);
-    const upperTick: number = priceToNearestUsableTick(upperPrice, token0decimals, token1decimals, tickSpacing);
+    const tickSpacing: number = getTickSpacing(fee);
 
-    lowerPrice = tickToPrice(lowerTick, token0decimals, token1decimals);
-    upperPrice = tickToPrice(upperTick, token0decimals, token1decimals);
+    const lowerTick: number = priceToNearestUsableTick(lowerPrice, decimals0, decimals1, tickSpacing);
+    const upperTick: number = priceToNearestUsableTick(upperPrice, decimals0, decimals1, tickSpacing);
+
+    lowerPrice = tickToPrice(lowerTick, decimals0, decimals1);
+    upperPrice = tickToPrice(upperTick, decimals0, decimals1);
 
     const ratio0: number = 0;
     const ratio1: number = 0;
@@ -307,14 +330,49 @@ const getAmountOfToken0ForToken1 = (amount1: number, decimals0: number, decimals
     return (amount0 * (10 ** decimals0));
 }
 
-const getRatioOfTokensAtPrice = (decimals0: number, decimals1: number, params: IPriceRangeInfo): IPriceRangeInfo => {
+const getRatioOfTokensAtPrice = (decimals0: number, decimals1: number, params: IPriceRangeInfo): void => {
     const amount1: number = getAmountOfToken1ForToken0(1, decimals0, decimals1, params) / (10 ** decimals1);
-    console.log(amount1);
 
     params.ratio0 = (params.price / (params.price + amount1)) * 100;
     params.ratio1 = (amount1 / (params.price + amount1)) * 100;
+}
 
-    return (params);
+const swapToken1ToToken0 = async (contract: Ranger, poolConfig: IPoolConfig, swap0: number, balance0: bigint, price: number, decimals0: number, decimals1: number): Promise<void> => {
+    const amountIn: bigint = BigInt(Math.floor(((swap0 - Number(balance0)) / (10 ** decimals0) * price) * (10 ** decimals1)));
+    const amountOutMinimum: bigint = BigInt(Math.floor((swap0 - Number(balance0)) * (1 - (0.5 / 100))));
+
+    const swap: ContractTransactionResponse = await contract.swap(poolConfig.token1, poolConfig.token0, amountIn, amountOutMinimum);
+    const swapReceipt: ContractTransactionReceipt | null = await swap.wait(1);
+    const swapGasUsed = swapReceipt!.gasUsed * swapReceipt!.gasPrice;
+
+    // Discord Webhook
+    await sendSwapLogsWebhook();
+
+    // Google Sheets API
+    await sendSwapLogsGSheet();
+
+    console.log(
+        `[${getTimestamp()}] - Swap from Token1 to Token0 has been executed`,
+    );
+}
+
+const swapToken0ToToken1 = async (contract: Ranger, poolConfig: IPoolConfig, swap1: number, balance1: bigint, price: number, decimals0: number, decimals1: number): Promise<void> => {
+    const amountIn: bigint = BigInt(Math.floor((swap1 - Number(balance1)) / (10 ** decimals1) / price * (10 ** decimals0)));
+    const amountOutMinimum: bigint = BigInt(Math.floor((swap1 - Number(balance1)) * (1 - (0.5 / 100))));
+
+    const swap: ContractTransactionResponse = await contract.swap(poolConfig.token1, poolConfig.token0, amountIn, amountOutMinimum);
+    const swapReceipt: ContractTransactionReceipt | null = await swap.wait(1);
+    const swapGasUsed = swapReceipt!.gasUsed * swapReceipt!.gasPrice;
+
+    // Discord Webhook
+    await sendSwapLogsWebhook();
+
+    // Google Sheets API
+    await sendSwapLogsGSheet();
+
+    console.log(
+        `[${getTimestamp()}] - Swap from Token0 to Token1 has been executed`,
+    );
 }
 
 export {
@@ -326,6 +384,8 @@ export {
     getTimestamp,
     sendWithdrawLogsGSheet,
     sendWithdrawLogsWebhook,
+    sendMintLogsWebhook,
+    sendMintLogsGSheet,
     getTokenInfoCoinGecko,
     getPriceOracle,
     priceToSqrtPriceX96,
@@ -334,5 +394,7 @@ export {
     getAmountOfToken0ForToken1,
     getAmountOfToken1ForToken0,
     tickToPrice,
-    getRatioOfTokensAtPrice
+    getRatioOfTokensAtPrice,
+    swapToken1ToToken0,
+    swapToken0ToToken1
 };

@@ -1,8 +1,8 @@
 import { expect } from "chai";
 import { ethers, deployments, getNamedAccounts } from "hardhat";
 import { Deployment } from "hardhat-deploy/types";
-import { IPoolConfig } from "../interfaces/IPoolConfig";
-import { IPositionData } from "../interfaces/IPositionData";
+import { IPoolConfig } from "../types/IPoolConfig";
+import { IPositionData } from "../types/IPositionData";
 import { POOL, WHALE } from "../helper-hardhat-config";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {

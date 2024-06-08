@@ -1,4 +1,4 @@
-export interface IMintLogs {
+export type IMintLogs = {
     timestamp: string;
     tokenId: bigint;
     gasUsed: bigint;

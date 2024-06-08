@@ -1,4 +1,4 @@
-export interface ISlot0 {
+export type ISlot0 = {
     sqrtPriceX96: bigint;
     tick: bigint;
     observationIndex: bigint;

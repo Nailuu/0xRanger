@@ -1,4 +1,4 @@
-export interface IWithdrawLogs {
+export type IWithdrawLogs = {
     timestamp: string;
     tokenId: bigint;
     gasUsed: bigint;

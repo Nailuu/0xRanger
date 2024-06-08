@@ -5,7 +5,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { IERC20, Ranger } from "../typechain-types";
 import { POOL, WHALE } from "../helper-hardhat-config";
 import { Pool, Position, nearestUsableTick, TickMath } from "@uniswap/v3-sdk";
-import { IPositionData } from "../interfaces/IPositionData";
+import { IPositionData } from "../types/IPositionData";
 import { AlphaRouter, SwapAndAddConfig, SwapAndAddOptions, SwapToRatioResponse, SwapToRatioRoute, SwapToRatioStatus, SwapType } from "@uniswap/smart-order-router";
 import { CurrencyAmount, Fraction, Percent, Token } from "@uniswap/sdk-core";
 import { BaseProvider } from '@ethersproject/providers'

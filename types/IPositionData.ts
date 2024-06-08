@@ -1,4 +1,4 @@
-export interface IPositionData {
+export type IPositionData = {
     tokenId: bigint;
     liquidity: bigint;
     tickLower: bigint;

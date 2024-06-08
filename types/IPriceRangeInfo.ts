@@ -1,4 +1,4 @@
-export interface IPriceRangeInfo {
+export type IPriceRangeInfo = {
     lowerTick: number,
     upperTick: number,
     lowerPrice: number,

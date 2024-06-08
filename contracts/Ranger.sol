@@ -4,6 +4,7 @@ pragma abicoder v2;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 // All uniswapV3 contracts are imported locally from
 // https://github.com/Uniswap/v3-core/tree/0.8
@@ -58,6 +59,8 @@ contract Ranger is IERC721Receiver {
         address pool;
         address token0;
         address token1;
+        uint8 decimals0;
+        uint8 decimals1;
         uint16 fee;
     }
 
@@ -108,9 +111,13 @@ contract Ranger is IERC721Receiver {
         }
     }
 
-    // So if you send basic ETH you can wrap those ETH for swap and mint
     function wrap() external onlyOwner {
-        // should wrap ETH -> WETH9
+        if (address(this).balance > 0) {
+            (bool sent, ) = address(WETH9).call{value: address(this).balance}("");
+            if (!sent) {
+                revert FailedToWrapETH();
+            }
+        }
     }
 
     /// @dev Implementing `onERC721Received` so this contract can receive custody of erc721 tokens
@@ -144,7 +151,8 @@ contract Ranger is IERC721Receiver {
             revert InvalidPoolConfig();
         }
 
-        poolConfig = PoolConfig(_pool, token0, token1, fee);
+        (uint8 decimals0, uint8 decimals1) = (ERC20(token0).decimals(), ERC20(token1).decimals());
+        poolConfig = PoolConfig(_pool, token0, token1, decimals0, decimals1, fee);
     }
 
     /// @notice Update PositionData structure with new position parameters
@@ -435,14 +443,5 @@ contract Ranger is IERC721Receiver {
             amountOutMinimum: amountOutMinimum,
             sqrtPriceLimitX96: 0
         }));
-    }
-
-    function wrap() external onlyOwner {
-        if (address(this).balance > 0) {
-            (bool sent, ) = address(WETH9).call{value: address(this).balance}("");
-            if (!sent) {
-                revert FailedToWrapETH();
-            }
-        }
     }
 }

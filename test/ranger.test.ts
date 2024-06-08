@@ -23,18 +23,18 @@ import {
     getAmountOfToken1ForLiquidity0,
     getAmountOfToken1ForToken0, getAmountOfToken0ForToken1, getRatioOfTokensAtPrice,
 } from "../helper-hardhat-config";
-import { IPositionData } from "../interfaces/IPositionData";
-import { IPoolConfig } from "../interfaces/IPoolConfig";
+import { IPositionData } from "../types/IPositionData";
+import { IPoolConfig } from "../types/IPoolConfig";
 import { TickMath } from "@uniswap/v3-sdk";
 import JSBI from "jsbi";
 import { IERC20, IUniswapV3Pool, Ranger } from "../typechain-types";
-import { IPriceRangeInfo } from "../interfaces/IPriceRangeInfo";
+import { IPriceRangeInfo } from "../types/IPriceRangeInfo";
 
 const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY;
 
 const PARAMS = {
     token0amount: 5n * 10n ** 18n,
-    token1amount: 7500n * 10n * 6n,
+    token1amount: 7500n * 10n ** 6n,
     // 1 - 0.1 / 100
     // X * (1 - 0.1 / 100) = X - 0.1%
     slippagePercent: 0.999,
@@ -195,6 +195,12 @@ describe("Ranger", async () => {
         expect(token1_after_balance).to.greaterThan(token1_before_balance);
     });
 
+    it("Price Oracle", async () => {
+        // Write strong tests for all new function
+
+
+    })
+
     it("Collect funds from contract to owner", async () => {
         const token0address = await token0.getAddress();
         const token1address = await token1.getAddress();
@@ -253,16 +259,4 @@ describe("Ranger", async () => {
             token1_deployer_before_balance + token1_contract_before_balance,
         );
     });
-
-    it("Price Oracle", async () => {
-        // Write strong tests for all new function
-        const params: IPriceRangeInfo = await priceToRange(contract, POOL.ARBITRUM.ADDRESS, 18, 6, 10, 2.5);
-
-        console.log(getRatioOfTokensAtPrice(18, 6, params));
-
-        // const amount1: number = getAmountOfToken1ForToken0(1, 18, 6, params);
-        // const amount0: number = getAmountOfToken0ForToken1(2500, 18, 6, params);
-        //
-        // console.log(amount0 / 1e18, amount1 / 1e6);
-    })
 });
