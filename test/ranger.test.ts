@@ -8,27 +8,22 @@ import {
     ContractTransactionReceipt,
     EventLog,
     Log,
+    TransactionRequest
 } from "ethers";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
     POOL,
     WHALE,
-    getPriceOracle,
-    getSlippageForAmmount,
-    priceToSqrtPriceX96,
-    priceToNearestUsableTick,
-    priceToRange,
     getLiquidityToken0,
-    tickToPrice,
-    getAmountOfToken1ForLiquidity0,
-    getAmountOfToken1ForToken0, getAmountOfToken0ForToken1, getRatioOfTokensAtPrice,
+    getAmountOfToken1ForLiquidity0, getSlippageForAmount, priceToRange,
 } from "../helper-hardhat-config";
 import { IPositionData } from "../types/IPositionData";
 import { IPoolConfig } from "../types/IPoolConfig";
 import { TickMath } from "@uniswap/v3-sdk";
-import JSBI from "jsbi";
-import { IERC20, IUniswapV3Pool, Ranger } from "../typechain-types";
+import { IERC20, INonfungiblePositionManager, IWETH9, Ranger } from "../typechain-types";
 import { IPriceRangeInfo } from "../types/IPriceRangeInfo";
+import { Deployment } from "hardhat-deploy/types";
+import { ISwapData } from "../types/ISwapData";
 
 const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY;
 
@@ -44,29 +39,29 @@ describe("Ranger", async () => {
     let contract: Ranger;
     let contractAddress: string;
     let accounts: HardhatEthersSigner[];
+    let poolConfig: IPoolConfig;
+    let decimals0: number;
+    let decimals1: number;
     let token0: IERC20;
     let token1: IERC20;
 
-    let tokenId: string;
-    let liquidity: bigint;
-
-    before(async () => {
+    beforeEach(async () => {
         await deployments.fixture(["all"]);
 
         accounts = await ethers.getSigners();
 
-        const tmp3 = await deployments.get("Ranger");
-        contract = await ethers.getContractAt("Ranger", tmp3.address);
+        const deploy: Deployment = await deployments.get("Ranger");
+        contract = await ethers.getContractAt("Ranger", deploy.address);
 
         contractAddress = await contract.getAddress();
 
         token0 = await ethers.getContractAt("IERC20", POOL.ARBITRUM.WETH);
         token1 = await ethers.getContractAt("IERC20", POOL.ARBITRUM.USDC);
 
-        const token0whale = await ethers.getImpersonatedSigner(
+        const token0whale: HardhatEthersSigner = await ethers.getImpersonatedSigner(
             WHALE.ARBITRUM.WETH,
         );
-        const token1whale = await ethers.getImpersonatedSigner(
+        const token1whale: HardhatEthersSigner = await ethers.getImpersonatedSigner(
             WHALE.ARBITRUM.USDC,
         );
 
@@ -77,78 +72,104 @@ describe("Ranger", async () => {
             PARAMS.token1amount,
         );
 
-        const copy0 = token0.connect(token0whale);
-        await copy0.transfer(accounts[0].address, PARAMS.token0amount);
+        const copy0: IERC20 = token0.connect(token0whale);
+        await copy0.transfer(contractAddress, PARAMS.token0amount);
 
-        const copy1 = token1.connect(token1whale);
-        await copy1.transfer(accounts[0].address, PARAMS.token1amount);
+        const copy1: IERC20 = token1.connect(token1whale);
+        await copy1.transfer(contractAddress, PARAMS.token1amount);
+
+        poolConfig = await contract.poolConfig();
+
+        decimals0 = Number(poolConfig.decimals0);
+        decimals1 = Number(poolConfig.decimals1);
     });
 
-    it("Pool with given parameters exist", async () => {
-        const factory = await ethers.getContractAt(
-            "IUniswapV3Factory",
-            "0x1F98431c8aD98523631AE4a59f267346ea31F984",
-        );
+    it("Wrap to WETH", async (): Promise<void> => {
+        const tx: TransactionRequest = {
+            to: contractAddress,
+            value: BigInt(10 * (10 ** decimals0))
+        }
 
-        const pool = await factory.getPool(
+       await accounts[0].sendTransaction(tx);
+
+        const b_balance: bigint = await ethers.provider.getBalance(contractAddress);
+        expect(b_balance.toString()).to.equal((10 * (10 ** decimals0)).toString());
+
+        const weth: IWETH9 = await ethers.getContractAt("IWETH9", "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1");
+
+        const b_weth_balance: bigint = await weth.balanceOf(contractAddress);
+
+        await contract.wrap();
+
+        const a_balance: bigint = await ethers.provider.getBalance(contractAddress);
+        expect(a_balance.toString()).to.equal("0");
+
+        const a_weth_balance: bigint = await weth.balanceOf(contractAddress);
+        expect(a_weth_balance.toString()).to.equal((Number(b_weth_balance) + (10 * (10 ** decimals0))).toString());
+    })
+
+    it("Pool Config Validation", async (): Promise<void> => {
+        await contract.setPoolConfig(
             POOL.ARBITRUM.WETH,
             POOL.ARBITRUM.USDC,
             POOL.ARBITRUM.FEE,
+            POOL.ARBITRUM.ADDRESS
         );
 
-        expect(pool).to.not.equal("0x0000000000000000000000000000000000000000");
+        await expect(contract.setPoolConfig(
+            "0xb908362f583C8567b5B26748DF47A5365CB79945",
+            "0x4c29F8A772E256bdB1BBc6d831Ee7ece3AA9f385",
+            500,
+            "0x0000000000000000000000000000000000000000")
+        ).to.be.revertedWithCustomError(contract, "InvalidPoolConfig");
+
+        await expect(contract.setPoolConfig(
+            POOL.ARBITRUM.WETH,
+            POOL.ARBITRUM.USDC,
+            100,
+            POOL.ARBITRUM.ADDRESS)
+        ).to.be.revertedWithCustomError(contract, "InvalidPoolConfig");
+
+        await expect(contract.setPoolConfig(
+            POOL.ARBITRUM.WETH,
+            POOL.ARBITRUM.USDC,
+            500,
+            "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9")
+        ).to.be.revertedWithCustomError(contract, "InvalidPoolConfig");
     });
 
-    it("Mint new position", async () => {
-        const copy0 = token0.connect(accounts[0]);
-        await copy0.transfer(contractAddress, PARAMS.token0amount);
+    it("Mint new position", async (): Promise<void> => {
+        const info: IPriceRangeInfo = await priceToRange(contract, poolConfig.pool, decimals0, decimals1, Number(poolConfig.fee), 2.5, 2.5);
 
-        const copy1 = token1.connect(accounts[0]);
-        await copy1.transfer(contractAddress, PARAMS.token1amount);
+        await contract.mintNewPosition(PARAMS.token0amount, PARAMS.token1amount, 0, 0, info.lowerTick, info.upperTick);
 
-        // Check that the tokens has successfully been transfered to smart contract
-        // expect(await token0.balanceOf(contractAddress)).to.gte(
-        //     PARAMS.token0amount,
-        // );
-        // expect(await token1.balanceOf(contractAddress)).to.gte(
-        //     PARAMS.token1amount,
-        // );
+        const newPositionData: IPositionData = await contract.positionData();
 
-        // NEED TO USE SLIPPAGE AFTER BECAUSE FOR NOW THERE IS NO TICK CALCULATION AND WE PROVIVE FOR THE FULL RANGE
-        // const slippage = getSlippageForAmmount(
-        //     PARAMS.slippagePercent,
-        //     PARAMS.token0amount,
-        //     PARAMS.token1amount,
-        // );
-
-        const tx: ContractTransactionResponse = await contract.mintNewPosition(
-            PARAMS.token0amount,
-            PARAMS.token1amount,
-            0,
-            0,
-            TickMath.MIN_TICK + 2,
-            TickMath.MAX_TICK - 2
-            // slippage[0],
-            // slippage[1]
-        );
-
-        const nfmp = await ethers.getContractAt(
+        const nfmp: INonfungiblePositionManager = await ethers.getContractAt(
             "INonfungiblePositionManager",
             "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
         );
 
-        // VERY IMPORTANT !!!!
-        // Give permission to smart contract to transfer the NFT to itself
-        // Needs to be implemented in prod!
-        await nfmp.setApprovalForAll(contractAddress, true);
+        const position = await nfmp.positions(newPositionData.tokenId);
 
-        const positionData = await contract.positionData();
+        expect(position[5].toString()).to.equal(info.lowerTick.toString());
+        expect(position[6].toString()).to.equal(info.upperTick.toString());
 
-        tokenId = positionData.tokenId.toString();
-        liquidity = positionData.liquidity;
+        expect(newPositionData.active).to.equal(true);
+        expect(newPositionData.tickLower.toString()).to.equal(info.lowerTick.toString());
+        expect(newPositionData.tickUpper.toString()).to.equal(info.upperTick.toString());
+
+        await expect(
+            contract.mintNewPosition(PARAMS.token0amount, PARAMS.token1amount, 0, 0, info.lowerTick, info.upperTick)
+        ).to.be.revertedWithCustomError(contract, "AlreadyActivePosition");
+
+        const owner: string = await nfmp.ownerOf(newPositionData.tokenId);
+        expect(owner).to.equal(accounts[0].address);
     });
 
-    it("Collect all fees and withdraw position", async () => {
+    it("Withdraw position", async (): Promise<void> => {
+        await expect(contract.withdrawLiquidity(0, 0)).to.be.revertedWithCustomError(contract, "NoActivePosition");
+
         const nfmp = await ethers.getContractAt(
             "INonfungiblePositionManager",
             "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
@@ -169,7 +190,7 @@ describe("Ranger", async () => {
         );
 
         // Remove PARAMS.slippagePercent to amount0 and amount1 to get amount0Min and amount1Min
-        const slippage = getSlippageForAmmount(
+        const slippage = getSlippageForAmount(
             PARAMS.slippagePercent,
             result[0],
             result[1],
@@ -194,12 +215,6 @@ describe("Ranger", async () => {
         expect(token0_after_balance).to.greaterThan(token0_before_balance);
         expect(token1_after_balance).to.greaterThan(token1_before_balance);
     });
-
-    it("Price Oracle", async () => {
-        // Write strong tests for all new function
-
-
-    })
 
     it("Collect funds from contract to owner", async () => {
         const token0address = await token0.getAddress();
@@ -259,4 +274,8 @@ describe("Ranger", async () => {
             token1_deployer_before_balance + token1_contract_before_balance,
         );
     });
+
+    it("Swap", async () => {
+
+    })
 });

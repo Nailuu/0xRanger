@@ -1,11 +1,11 @@
 import { ethers } from "hardhat";
 import {
-    getRatioOfTokensAtPrice,
+    getRatioOfTokensAtPrice, getSlippageForAmount,
     getTimestamp, priceToRange,
-    sendErrorLogsWebhook, sendMintLogsWebhook,
+    sendErrorLogsWebhook, sendMintLogsGSheet, sendMintLogsWebhook, sendSwapLogsGSheet, sendSwapLogsWebhook,
     sendWithdrawLogsGSheet,
     sendWithdrawLogsWebhook,
-    sleep, swapToken0ToToken1, swapToken1ToToken0,
+    sleep, swapToken0ToToken1, swapToken1ToToken0, NFMP_ADDRESS
 } from "../helper-hardhat-config";
 import { IPoolConfig } from "../types/IPoolConfig";
 import {
@@ -22,12 +22,16 @@ import { IPositionData } from "../types/IPositionData";
 import { ISlot0 } from "../types/ISlot0";
 import { IAmounts } from "../types/IAmounts";
 import { IWithdrawResult } from "../types/IWithdrawResult";
+import { IWithdrawLogs } from "../types/IWithdrawLogs";
+import { IPriceRangeInfo } from "../types/IPriceRangeInfo";
+import { ISwapData } from "../types/ISwapData";
+import { ISwapLogs } from "../types/ISwapLogs";
+import { IMintLogs } from "../types/IMintLogs";
 
 // docs: https://theoephraim.github.io/node-google-spreadsheet/#/
 import { GoogleSpreadsheet } from "google-spreadsheet";
 import { JWT } from "google-auth-library";
-import { IWithdrawLogs } from "../types/IWithdrawLogs";
-import { IPriceRangeInfo } from "../types/IPriceRangeInfo";
+
 
 const GOOGLE_CLIENT_EMAIL: string = process.env.GOOGLE_CLIENT_EMAIL!;
 // replace \n character to real newline otherwise throw error
@@ -53,34 +57,6 @@ const TICK_RANGE_CHECK_TIMEOUT: number = 5;
 const SLIPPAGE: number = 1 - 0.1 / 100;
 
 const bot = async (): Promise<void> => {
-    // const tmp: IWithdrawLogs = {
-    //     timestamp: getTimestamp(),
-    //     tokenId: 541234412n,
-    //     gasUsed: 122n,
-    //     tick: 85000n,
-    //     lowerTick: 83000n,
-    //     upperTick: 88000n,
-    //     amount0: 53453453453454348329n,
-    //     amount1: 53453453n,
-    //     fee0: 4324234489430424n,
-    //     fee1: 90654n,
-    //     b_amount0: 534534534534543n,
-    //     b_amount1: 534534534534543n,
-    //     a_amount0: 534534534534543n,
-    //     a_amount1: 534534534534543n,
-    // };
-
-    // const tmp2: IPoolConfig = {
-    //     pool: "test",
-    //     token0: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-    //     token1: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
-    //     fee: 500n,
-    // }
-
-    // await sendWithdrawLogsWebhook(tmp, tmp2);
-
-    // return;
-
     const contract: Ranger = await ethers.getContractAt(
         "Ranger",
         CONTRACT_ADDRESS,
@@ -106,9 +82,9 @@ const bot = async (): Promise<void> => {
         poolConfig.pool,
     );
 
-    while (true) {
+    for (;;) {
         if (!positionData.active) {
-            console.log(`[${getTimestamp()}] - No active position found!`);
+            console.log(`[${getTimestamp()}] - No active position`);
             break;
         }
 
@@ -132,30 +108,22 @@ const bot = async (): Promise<void> => {
                 positionData.tickUpper,
             );
 
-            const amount0Min: number = Math.ceil(
-                Number(amounts.amount0) * SLIPPAGE,
-            );
-            const amount1Min: number = Math.ceil(
-                Number(amounts.amount1) * SLIPPAGE,
-            );
+            const amountsMin: bigint[] = getSlippageForAmount(SLIPPAGE, amounts.amount0, amounts.amount1);
 
             // withdraw liquidity and collect fees
-            const withdraw: ContractTransactionResponse =
-                await contract.withdrawLiquidity(amount0Min, amount1Min);
+            const withdraw: ContractTransactionResponse = await contract.withdrawLiquidity(amountsMin[0], amountsMin[1]);
 
-            const withdrawReceipt: ContractTransactionReceipt | null =
-                await withdraw.wait(1);
-            const withdrawGasUsed =
-                withdrawReceipt!.gasUsed * withdrawReceipt!.gasPrice;
+            const timestamp: string = getTimestamp();
+            const withdrawReceipt: ContractTransactionReceipt | null = await withdraw.wait(1);
+            const withdrawGasUsed: bigint = withdrawReceipt!.gasUsed * withdrawReceipt!.gasPrice;
 
-            const withdrawResult: IWithdrawResult =
-                await contract.withdrawResult();
+            const withdrawResult: IWithdrawResult = await contract.withdrawResult();
 
             const a_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
             const a_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
 
             const data: IWithdrawLogs = {
-                timestamp: getTimestamp(),
+                timestamp: timestamp,
                 tokenId: positionData.tokenId,
                 gasUsed: withdrawGasUsed,
                 tick: slot0.tick,
@@ -173,19 +141,15 @@ const bot = async (): Promise<void> => {
 
             // Discord Webhook
             await sendWithdrawLogsWebhook(data, poolConfig);
-
             // Google Sheets API
             await sendWithdrawLogsGSheet(doc, data);
 
-            console.log(
-                `[${getTimestamp()}] - Position (Token ID: ${positionData.tokenId}) has been withdrawn`,
-            );
+            console.log(`[${timestamp}] - Position (Token ID: ${positionData.tokenId}) has been withdrawn`);
             break;
         }
 
-        console.log(
-            `[${getTimestamp()}] - Position still in range, sleeping mode activated (${TICK_RANGE_CHECK_TIMEOUT} minutes)`,
-        );
+        console.log(`[${getTimestamp()}] - Position still in range, sleeping mode activated (${TICK_RANGE_CHECK_TIMEOUT} minutes)`,);
+
         await sleep(60 * TICK_RANGE_CHECK_TIMEOUT * 1000);
     }
 
@@ -195,14 +159,14 @@ const bot = async (): Promise<void> => {
         await contract.wrap();
     }
 
-    const balance0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
-    const balance1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
+    const b_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
+    const b_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
 
-    const params: IPriceRangeInfo = await priceToRange(contract, poolConfig.pool, decimals0, decimals1, Number(poolConfig.fee), LOWER_RANGE_PERCENT, UPPER_RANGER_PERCENT);
-    getRatioOfTokensAtPrice(decimals0, decimals1, params);
+    const info: IPriceRangeInfo = await priceToRange(contract, poolConfig.pool, decimals0, decimals1, Number(poolConfig.fee), LOWER_RANGE_PERCENT, UPPER_RANGER_PERCENT);
+    getRatioOfTokensAtPrice(decimals0, decimals1, info);
 
-    const weight0: number = Number(balance0) / (10 ** decimals0) * params.price;
-    const weight1: number = Number(balance1) / (10 ** decimals1);
+    const weight0: number = Number(b_amount0) / (10 ** decimals0) * info.price;
+    const weight1: number = Number(b_amount1) / (10 ** decimals1);
 
     const totalWeightInY: number = weight0 + weight1;
 
@@ -211,16 +175,66 @@ const bot = async (): Promise<void> => {
     // for swap0 / params.price to convert back to X
 
     // swap0 and swap1 = number of each token to we have to hold for to get a perfect ratio for providing liquidity
-    const swap0: number = totalWeightInY * (params.ratio0 / 100) / params.price * (10 ** decimals0);
-    const swap1: number = totalWeightInY * (params.ratio1 / 100) * (10 ** decimals1);
+    const swap0: number = totalWeightInY * (info.ratio0 / 100) / info.price * (10 ** decimals0);
+    const swap1: number = totalWeightInY * (info.ratio1 / 100) * (10 ** decimals1);
 
-    if (BigInt(Math.floor(swap0)) > balance0) {
-        // swap token1 to token0
-        await swapToken1ToToken0(contract, poolConfig, swap0, balance0, params.price, decimals0, decimals1);
-    } else if (BigInt(Math.floor(swap1)) > balance1) {
-        // swap token0 to token1
-        await swapToken0ToToken1(contract, poolConfig, swap1, balance1, params.price, decimals0, decimals1);
+    let swapData: ISwapData | Record<string, never> = {};
+    let option: boolean = false;
+
+    // swap token1 to token0
+    if (BigInt(Math.floor(swap0)) > b_amount0) {
+        swapData = await swapToken1ToToken0(contract, poolConfig, swap0, b_amount0, info.price, decimals0, decimals1);
+        option = true;
     }
+    // swap token0 to token1
+    else if (BigInt(Math.floor(swap1)) > b_amount1) {
+        swapData = await swapToken0ToToken1(contract, poolConfig, swap1, b_amount1, info.price, decimals0, decimals1);
+        option = false;
+    }
+    // in case the position was perfectly divided and no swap was needed
+    else {
+        swapData = {
+            timestamp: getTimestamp(),
+            amountIn: 0n,
+            gasUsed: 0n,
+        };
+    }
+
+    const a_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
+    const a_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
+
+    const swapLogsParams: ISwapLogs = {
+        timestamp: swapData.timestamp,
+        gasUsed: swapData.gasUsed,
+        token0: poolConfig.token0,
+        token1: poolConfig.token1,
+        decimals0: decimals0,
+        decimals1: decimals1,
+        option: option,
+        b_amount0: b_amount0,
+        b_amount1: b_amount1,
+        a_amount0: a_amount0,
+        a_amount1: a_amount1,
+        weight0: weight0,
+        weight1: weight1,
+        totalWeightInY: totalWeightInY,
+        swap0: swap0,
+        swap1: swap1,
+        lowerTick: info.lowerTick,
+        upperTick: info.upperTick,
+        lowerPrice: info.lowerPrice,
+        upperPrice: info.upperPrice,
+        price: info.price,
+        ratio0: info.ratio0,
+        ratio1: info.ratio1,
+    };
+
+    // Discord Webhook
+    await sendSwapLogsWebhook(swapLogsParams);
+    // Google Sheets API
+    await sendSwapLogsGSheet(doc, swapLogsParams);
+
+    console.log(`[${swapData.timestamp}] - Swap executed from ${option ? "token1" : "token0"} to ${option ? "token0" : "token1"}`,);
 
     const amount0ToMint: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
     const amount1ToMint: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
@@ -228,44 +242,46 @@ const bot = async (): Promise<void> => {
     const amount0Min: bigint = BigInt(Math.floor(Number(amount0ToMint) * (1 - 0.5 / 100)));
     const amount1Min: bigint = BigInt(Math.floor(Number(amount1ToMint) * (1 - 0.5 / 100)));
 
-    // mint
+    // mint new position
     const mint: ContractTransactionResponse = await contract.mintNewPosition(
         amount0ToMint,
         amount1ToMint,
         amount0Min,
         amount1Min,
-        params.lowerTick,
-        params.upperTick,
+        info.lowerTick,
+        info.upperTick,
     );
 
+    const mintTimestamp: string = getTimestamp();
     const mintReceipt: ContractTransactionReceipt | null = await mint.wait(1);
-    const mintGasUsed = mintReceipt!.gasUsed * mintReceipt!.gasPrice;
+    const mintGasUsed: bigint = mintReceipt!.gasUsed * mintReceipt!.gasPrice;
 
     const newPositionData: IPositionData = await contract.positionData();
 
+    const mintLogsParams: IMintLogs = {
+        timestamp: mintTimestamp,
+        tokenId: newPositionData.tokenId,
+        gasUsed: mintGasUsed,
+        lowerTick: info.lowerTick,
+        upperTick: info.upperTick,
+        lowerPrice: info.lowerPrice,
+        upperPrice: info.upperPrice,
+        price: info.price,
+        amount0ToMint: amount0ToMint,
+        amount1ToMint: amount1ToMint,
+    };
+
     // Discord Webhook
-    await sendMintLogsWebhook();
-
+    await sendMintLogsWebhook(mintLogsParams);
     // Google Sheets API
-    await sendMintLogsGSheet();
+    await sendMintLogsGSheet(doc, mintLogsParams);
 
-    console.log(
-        `[${getTimestamp()}] - New position (Token ID: ${newPositionData.tokenId}) has been minted`,
-    );
+    console.log(`[${mintTimestamp}] - New position (Token ID: ${newPositionData.tokenId}) has been minted`,);
 
-    const nfmp: INonfungiblePositionManager = await ethers.getContractAt(
-        "INonfungiblePositionManager",
-        "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
-    );
-
-    // approveForAll
-    // wait 1 block
+    // Approve contract to pull ownership of position NFT
     // Take in consideration gasUsed for approval is not computed in Google Sheets
-    const nfmpTx: ContractTransactionResponse = await nfmp.setApprovalForAll(
-        CONTRACT_ADDRESS,
-        true,
-    );
-    await nfmpTx.wait(1);
+    const nfmp: INonfungiblePositionManager = await ethers.getContractAt("INonfungiblePositionManager", NFMP_ADDRESS);
+    await nfmp.setApprovalForAll(CONTRACT_ADDRESS, true);
 
     // sleep
     await sleep(60 * TICK_RANGE_CHECK_TIMEOUT * 1000);
@@ -273,7 +289,7 @@ const bot = async (): Promise<void> => {
 
 bot()
     .then(() => process.exit(0))
-    .catch(async (error: Error) => {
+    .catch(async (error: Error): Promise<void> => {
         await sendErrorLogsWebhook("bot.ts", error);
         console.error(error);
         process.exit(1);

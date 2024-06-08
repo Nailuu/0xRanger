@@ -266,11 +266,6 @@ contract Ranger is IERC721Receiver {
             revert NoActivePosition();
         }
 
-        // require is only for testing to not forget about approval, can be removed in production
-        if (!NFPM.isApprovedForAll(msg.sender, address(this))) {
-            revert ContractNotApproved();
-        }
-
         // Transfer ownership to itself (smart contract)
         // Smart contract needs to be setApprovalForAll !!
         NFPM.safeTransferFrom(msg.sender, address(this), positionData.tokenId);
@@ -310,10 +305,6 @@ contract Ranger is IERC721Receiver {
         );
 
         positionData.active = false;
-
-        // Transfer NFT back to owner for safety reasons
-        // Have to look but I don't you need to transfer back because after withdrawing full liquidity the position doesn't exist anymore
-        // _nfpm.safeTransferFrom(address(this), msg.sender, positionData.tokenId);
     }
 
     /// @notice Can be used to withdraw tokens or ETH from contract

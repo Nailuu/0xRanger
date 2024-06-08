@@ -2,10 +2,11 @@ export type IMintLogs = {
     timestamp: string;
     tokenId: bigint;
     gasUsed: bigint;
-    lowerTick: bigint;
-    upperTick: bigint;
-    amount0: bigint;
-    amount1: bigint;
-    amount0Min: bigint;
-    amount1Min: bigint;
+    lowerTick: number;
+    upperTick: number;
+    lowerPrice: number;
+    upperPrice: number;
+    price: number;
+    amount0ToMint: bigint;
+    amount1ToMint: bigint;
 }
