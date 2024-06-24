@@ -3,6 +3,7 @@ node_modules
 gas-report.txt
 .todo
 /.config
+logs.txt
 
 # Jet Brains
 /.idea

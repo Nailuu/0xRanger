@@ -262,11 +262,33 @@ const getTimestamp = (): string => {
 const sendWithdrawLogsGSheet = async (
     doc: GoogleSpreadsheet,
     data: IWithdrawLogs,
+    poolConfig: IPoolConfig,
 ): Promise<void> => {
     // you have to share the gsheet to GOOGLE_CLIENT_EMAIL
     await doc.loadInfo();
 
     const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Withdraw DB"];
+
+    const token0 = await getTokenInfoCoinGecko(poolConfig.token0);
+    const token1 = await getTokenInfoCoinGecko(poolConfig.token1);
+
+    const price_amount0 = (
+        (Number(data.amount0) / 10 ** token0.decimals) *
+        token0.price
+    ).toFixed(4);
+    const price_amount1 = (
+        (Number(data.amount1) / 10 ** token1.decimals) *
+        token1.price
+    ).toFixed(4);
+
+    const price_fee0 = (
+        (Number(data.fee0) / 10 ** token0.decimals) *
+        token0.price
+    ).toFixed(4);
+    const price_fee1 = (
+        (Number(data.fee1) / 10 ** token1.decimals) *
+        token1.price
+    ).toFixed(4);
 
     const row: GoogleSpreadsheetRow = await sheet.addRow({
         timestamp: data.timestamp,
@@ -283,6 +305,10 @@ const sendWithdrawLogsGSheet = async (
         b_amount1: data.b_amount1.toString(),
         a_amount0: data.a_amount0.toString(),
         a_amount1: data.a_amount1.toString(),
+        usd_amount0: price_amount0.toString(),
+        usd_amount1: price_amount1.toString(),
+        usd_fee0: price_fee0.toString(),
+        usd_fee1: price_fee1.toString(),
     });
 
     await row.save();

@@ -140,7 +140,7 @@ const bot = async (): Promise<void> => {
             // Discord Webhook
             await sendWithdrawLogsWebhook(data, poolConfig);
             // Google Sheets API
-            await sendWithdrawLogsGSheet(doc, data);
+            await sendWithdrawLogsGSheet(doc, data, poolConfig);
 
             customLog(`[${timestamp}] - Position (Token ID: ${positionData.tokenId}) has been withdrawn`);
             break;
