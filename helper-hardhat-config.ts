@@ -422,7 +422,7 @@ const swapToken0ToToken1 = async (contract: Ranger, poolConfig: IPoolConfig, swa
 
 const customLog = (msg: string): void => {
     console.log(msg);
-    fs.appendFile("logs.txt", msg);
+    fs.appendFile("logs.txt", msg + "\n");
 };
 
 export {
