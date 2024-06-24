@@ -14,7 +14,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         args: [POOL.ARBITRUM.WETH, POOL.ARBITRUM.USDC, POOL.ARBITRUM.FEE, POOL.ARBITRUM.ADDRESS],
     });
 
-    //   console.log("Ranger contract deployed at: ", res.address);
+      console.log("Ranger contract deployed at: ", res.address);
 };
 
 func.tags = ["all", "ranger"];

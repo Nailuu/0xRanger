@@ -5,7 +5,7 @@ import {
     sendErrorLogsWebhook, sendMintLogsGSheet, sendMintLogsWebhook, sendSwapLogsGSheet, sendSwapLogsWebhook,
     sendWithdrawLogsGSheet,
     sendWithdrawLogsWebhook,
-    sleep, swapToken0ToToken1, swapToken1ToToken0, NFMP_ADDRESS, WETH_ADDRESS
+    sleep, swapToken0ToToken1, swapToken1ToToken0, NFMP_ADDRESS, POOL, customLog,
 } from "../helper-hardhat-config";
 import { IPoolConfig } from "../types/IPoolConfig";
 import {
@@ -27,11 +27,11 @@ import { IPriceRangeInfo } from "../types/IPriceRangeInfo";
 import { ISwapData } from "../types/ISwapData";
 import { ISwapLogs } from "../types/ISwapLogs";
 import { IMintLogs } from "../types/IMintLogs";
+import fs from "fs-extra";
 
 // docs: https://theoephraim.github.io/node-google-spreadsheet/#/
 import { GoogleSpreadsheet } from "google-spreadsheet";
 import { JWT } from "google-auth-library";
-
 
 const GOOGLE_CLIENT_EMAIL: string = process.env.GOOGLE_CLIENT_EMAIL!;
 // replace \n character to real newline otherwise throw error
@@ -48,7 +48,7 @@ const jwt: JWT = new JWT({
 
 const doc: GoogleSpreadsheet = new GoogleSpreadsheet(SPREADSHEET_ID, jwt);
 
-const CONTRACT_ADDRESS: string = "";
+const CONTRACT_ADDRESS: string = "0x51d019355b13EdC852d97BcCe0f844F51a833378";
 const LOWER_RANGE_PERCENT: number = 2.5;
 const UPPER_RANGER_PERCENT: number = 2.5;
 
@@ -84,7 +84,7 @@ const bot = async (): Promise<void> => {
 
     for (;;) {
         if (!positionData.active) {
-            console.log(`[${getTimestamp()}] - No active position`);
+            customLog(`[${getTimestamp()}] - No active position`);
             break;
         }
 
@@ -94,9 +94,7 @@ const bot = async (): Promise<void> => {
             slot0.tick < positionData.tickLower ||
             slot0.tick > positionData.tickUpper
         ) {
-            console.log(
-                `[${getTimestamp()}] - Position out of range, withdrawing liquidity!`,
-            );
+            customLog(`[${getTimestamp()}] - Position out of range, withdrawing liquidity!`);
 
             const b_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
             const b_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
@@ -144,24 +142,29 @@ const bot = async (): Promise<void> => {
             // Google Sheets API
             await sendWithdrawLogsGSheet(doc, data);
 
-            console.log(`[${timestamp}] - Position (Token ID: ${positionData.tokenId}) has been withdrawn`);
+            customLog(`[${timestamp}] - Position (Token ID: ${positionData.tokenId}) has been withdrawn`);
             break;
         }
 
-        console.log(`[${getTimestamp()}] - Position still in range, sleeping mode activated (${TICK_RANGE_CHECK_TIMEOUT} minutes)`,);
+        customLog(`[${getTimestamp()}] - Position still in range, sleeping mode activated (${TICK_RANGE_CHECK_TIMEOUT} minutes)`);
 
         await sleep(60 * TICK_RANGE_CHECK_TIMEOUT * 1000);
     }
 
     // wrap ETH if balance of ETH > 0 to get WETH
     const balanceETH: bigint = await ethers.provider.getBalance(CONTRACT_ADDRESS);
-    if (balanceETH > 0 && (poolConfig.token0 == WETH_ADDRESS || poolConfig.token1 == WETH_ADDRESS)) {
+    if (balanceETH > 0n && (poolConfig.token0 == POOL.ARBITRUM.WETH || poolConfig.token1 == POOL.ARBITRUM.WETH)) {
         // Take in consideration gasUsed for approval is not computed in Google Sheets
+        customLog(`[${getTimestamp()}] - Wrapping ETH`);
         await contract.wrap();
     }
 
     const b_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
     const b_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
+
+    if (b_amount0 == 0n && b_amount1 == 0n) {
+        throw new Error("Contract balance of token0 and token1 is 0");
+    }
 
     const info: IPriceRangeInfo = await priceToRange(contract, poolConfig.pool, decimals0, decimals1, Number(poolConfig.fee), LOWER_RANGE_PERCENT, UPPER_RANGER_PERCENT);
     getRatioOfTokensAtPrice(decimals0, decimals1, info);
@@ -235,13 +238,13 @@ const bot = async (): Promise<void> => {
     // Google Sheets API
     await sendSwapLogsGSheet(doc, swapLogsParams);
 
-    console.log(`[${swapData.timestamp}] - Swap executed from ${option ? "token1" : "token0"} to ${option ? "token0" : "token1"}`,);
+    customLog(`[${swapData.timestamp}] - Swap executed from ${option ? "token1" : "token0"} to ${option ? "token0" : "token1"}`);
 
     const amount0ToMint: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
     const amount1ToMint: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
 
-    const amount0Min: bigint = BigInt(Math.floor(Number(amount0ToMint) * (1 - 0.5 / 100)));
-    const amount1Min: bigint = BigInt(Math.floor(Number(amount1ToMint) * (1 - 0.5 / 100)));
+    const amount0Min: bigint = BigInt(Math.floor(Number(amount0ToMint) * (1 - 1 / 100)));
+    const amount1Min: bigint = BigInt(Math.floor(Number(amount1ToMint) * (1 - 1 / 100)));
 
     // mint new position
     const mint: ContractTransactionResponse = await contract.mintNewPosition(
@@ -277,7 +280,7 @@ const bot = async (): Promise<void> => {
     // Google Sheets API
     await sendMintLogsGSheet(doc, mintLogsParams);
 
-    console.log(`[${mintTimestamp}] - New position (Token ID: ${newPositionData.tokenId}) has been minted`,);
+    customLog(`[${mintTimestamp}] - New position (Token ID: ${newPositionData.tokenId}) has been minted`);
 
     // Approve contract to pull ownership of position NFT
     // Take in consideration gasUsed for approval is not computed in Google Sheets
@@ -288,10 +291,15 @@ const bot = async (): Promise<void> => {
     await sleep(60 * TICK_RANGE_CHECK_TIMEOUT * 1000);
 };
 
-bot()
-    .then(() => process.exit(0))
-    .catch(async (error: Error): Promise<void> => {
-        await sendErrorLogsWebhook("bot.ts", error);
-        console.error(error);
-        process.exit(1);
-    });
+const run = async (): Promise<void> => {
+    for (;;) {
+        await bot()
+            .catch(async (error: Error): Promise<void> => {
+                await sendErrorLogsWebhook("bot.ts", error);
+                console.error(error);
+                process.exit(1);
+            });
+    }
+}
+
+run();

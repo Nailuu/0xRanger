@@ -17,6 +17,7 @@ import { IPositionData } from "./types/IPositionData";
 import JSBI from "jsbi";
 import { ISwapLogs } from "./types/ISwapLogs";
 import { IMintLogs } from "./types/IMintLogs";
+import fs from "fs-extra";
 
 const POOL = {
     ETH_MAINNET: {
@@ -419,6 +420,11 @@ const swapToken0ToToken1 = async (contract: Ranger, poolConfig: IPoolConfig, swa
     return { timestamp, amountIn, gasUsed };
 };
 
+const customLog = (msg: string): void => {
+    console.log(msg);
+    fs.appendFile("logs.txt", msg);
+};
+
 export {
     POOL,
     WHALE,
@@ -445,4 +451,5 @@ export {
     getRatioOfTokensAtPrice,
     swapToken1ToToken0,
     swapToken0ToToken1,
+    customLog
 };

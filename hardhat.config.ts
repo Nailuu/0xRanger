@@ -4,16 +4,12 @@ import "@nomiclabs/hardhat-solhint";
 import "hardhat-gas-reporter";
 import "hardhat-deploy";
 import "solidity-coverage";
+import "dotenv/config";
 
-require("dotenv").config();
-
-const ARBITRUM_SEPOLIA_RPC_URL = process.env.ARBITRUM_SEPOLIA_RPC_URL;
 const ARBITRUM_RPC_URL = process.env.ARBITRUM_RPC_URL;
-const ETHEREUM_RPC_URL = process.env.ETHEREUM_RPC_URL;
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const COINMARKETCAP_API_KEY = process.env.COINMARKETCAP_API_KEY;
 const REPORT_GAS = process.env.REPORT_GAS;
-const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;
 const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY;
 
 const DEFAULT_COMPILER_SETTINGS = {
@@ -64,17 +60,16 @@ const config: HardhatUserConfig = {
         hardhat: {
             forking: {
                 enabled: true,
-                // url: ETHEREUM_RPC_URL!,
                 url: ARBITRUM_RPC_URL!,
-                blockNumber: 218839870,
+                blockNumber: 225208093,
             },
-            chainId: 31337,
+            chainId: 42161,
         },
-        // sepolia: {
-        //     url: ARBITRUM_SEPOLIA_RPC_URL,
-        //     accounts: [PRIVATE_KEY!],
-        //     chainId: 11155111,
-        // },
+        arbitrum: {
+            url: ARBITRUM_RPC_URL!,
+            accounts: [PRIVATE_KEY!],
+            chainId: 42161,
+        },
         localhost: {
             url: "http://127.0.0.1:8545/",
             chainId: 31337,
