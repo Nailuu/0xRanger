@@ -16,7 +16,7 @@ import "./uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import "./uniswap/v3-core/contracts/libraries/TickMath.sol";
 import "./uniswap/v3-core/contracts/libraries/FullMath.sol";
 
- import "./uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import "./uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "./uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
 import "./uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "./uniswap/v3-periphery/contracts/libraries/PoolAddress.sol";
@@ -114,7 +114,9 @@ contract Ranger is IERC721Receiver {
     /// @notice this function is called whenever the contrat has a ETH balance > 0, just before swapping to wrap ETH into WETH if WETH is one of tokens
     function wrap() external onlyOwner {
         if (address(this).balance > 0) {
-            (bool sent, ) = address(WETH9).call{value: address(this).balance}("");
+            (bool sent, ) = address(WETH9).call{value: address(this).balance}(
+                ""
+            );
             if (!sent) {
                 revert FailedToWrapETH();
             }
@@ -152,8 +154,18 @@ contract Ranger is IERC721Receiver {
             revert InvalidPoolConfig();
         }
 
-        (uint8 decimals0, uint8 decimals1) = (ERC20(token0).decimals(), ERC20(token1).decimals());
-        poolConfig = PoolConfig(_pool, token0, token1, decimals0, decimals1, fee);
+        (uint8 decimals0, uint8 decimals1) = (
+            ERC20(token0).decimals(),
+            ERC20(token1).decimals()
+        );
+        poolConfig = PoolConfig(
+            _pool,
+            token0,
+            token1,
+            decimals0,
+            decimals1,
+            fee
+        );
     }
 
     /// @notice Update PositionData structure with new position parameters
@@ -199,7 +211,7 @@ contract Ranger is IERC721Receiver {
         int24 lowerTick,
         int24 upperTick
     )
-        external
+        public
         onlyOwner
         returns (
             uint256 tokenId,
@@ -429,23 +441,52 @@ contract Ranger is IERC721Receiver {
     /// @param tokenIn Address of the tokenX (input)
     /// @param tokenOut Address of the tokenY (output)
     /// @param amountIn Amount of tokenX that you want to swap to tokenY
+    /// @param lowerTick lowerTick for minting
+    /// @param upperTick upperTick for minting
     /** @dev Careful amountIn has to be in decimals of the tokenIn
     (e.g. for WETH, 18 decimals and you want to provide 1 WETH = 1 * 1e18)
     **/
     /// @param amountOutMinimum Safety minimum amount to receive in tokenY otherwise revert
-    function swap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMinimum) external onlyOwner {
+    function swapAndMint(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 amountOutMinimum,
+        int24 lowerTick,
+        int24 upperTick
+    ) external onlyOwner {
         TransferHelper.safeApprove(tokenIn, address(ROUTER), amountIn);
 
         // https://docs.uniswap.org/contracts/v3/guides/swaps/single-swaps
-        ROUTER.exactInputSingle(ISwapRouter.ExactInputSingleParams({
-            tokenIn: tokenIn,
-            tokenOut: tokenOut,
-            fee: poolConfig.fee,
-            recipient: address(this),
-            deadline: block.timestamp,
-            amountIn: amountIn,
-            amountOutMinimum: amountOutMinimum,
-            sqrtPriceLimitX96: 0
-        }));
+        ROUTER.exactInputSingle(
+            ISwapRouter.ExactInputSingleParams({
+                tokenIn: tokenIn,
+                tokenOut: tokenOut,
+                fee: poolConfig.fee,
+                recipient: address(this),
+                deadline: block.timestamp,
+                amountIn: amountIn,
+                amountOutMinimum: amountOutMinimum,
+                sqrtPriceLimitX96: 0
+            })
+        );
+
+        (uint256 amount0, uint256 amount1) = (
+            IERC20(poolConfig.token0).balanceOf(address(this)),
+            IERC20(poolConfig.token1).balanceOf(address(this))
+        );
+        (uint256 amount0min, uint256 amount1min) = (
+            amount0 - amount0 / 200,
+            amount1 - amount1 / 200
+        );
+
+        mintNewPosition(
+            amount0,
+            amount1,
+            amount0min,
+            amount1min,
+            lowerTick,
+            upperTick
+        );
     }
 }

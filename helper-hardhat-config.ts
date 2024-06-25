@@ -427,11 +427,11 @@ const getRatioOfTokensAtPrice = (decimals0: number, decimals1: number, params: I
     params.ratio1 = (amount1 / (params.price + amount1)) * 100;
 };
 
-const swapToken1ToToken0 = async (contract: Ranger, poolConfig: IPoolConfig, swap0: number, balance0: bigint, price: number, decimals0: number, decimals1: number): Promise<ISwapData> => {
-    const amountIn: bigint = BigInt(Math.floor(((swap0 - Number(balance0)) / (10 ** decimals0) * price) * (10 ** decimals1)));
+const swapToken1ToToken0 = async (contract: Ranger, poolConfig: IPoolConfig, info: IPriceRangeInfo, swap0: number, balance0: bigint, decimals0: number, decimals1: number): Promise<ISwapData> => {
+    const amountIn: bigint = BigInt(Math.floor(((swap0 - Number(balance0)) / (10 ** decimals0) * info.price) * (10 ** decimals1)));
     const amountOutMinimum: bigint = BigInt(Math.floor((swap0 - Number(balance0)) * (1 - (0.5 / 100))));
 
-    const swap: ContractTransactionResponse = await contract.swap(poolConfig.token1, poolConfig.token0, amountIn, amountOutMinimum);
+    const swap: ContractTransactionResponse = await contract.swapAndMint(poolConfig.token1, poolConfig.token0, amountIn, amountOutMinimum, info.lowerTick, info.upperTick);
     const timestamp: string = getTimestamp();
     const swapReceipt: ContractTransactionReceipt | null = await swap.wait(1);
     const gasUsed: bigint = swapReceipt!.gasUsed * swapReceipt!.gasPrice;
@@ -439,11 +439,11 @@ const swapToken1ToToken0 = async (contract: Ranger, poolConfig: IPoolConfig, swa
     return { timestamp, amountIn, gasUsed };
 };
 
-const swapToken0ToToken1 = async (contract: Ranger, poolConfig: IPoolConfig, swap1: number, balance1: bigint, price: number, decimals0: number, decimals1: number): Promise<ISwapData> => {
-    const amountIn: bigint = BigInt(Math.floor((swap1 - Number(balance1)) / (10 ** decimals1) / price * (10 ** decimals0)));
+const swapToken0ToToken1 = async (contract: Ranger, poolConfig: IPoolConfig, info: IPriceRangeInfo, swap1: number, balance1: bigint, decimals0: number, decimals1: number): Promise<ISwapData> => {
+    const amountIn: bigint = BigInt(Math.floor((swap1 - Number(balance1)) / (10 ** decimals1) / info.price * (10 ** decimals0)));
     const amountOutMinimum: bigint = BigInt(Math.floor((swap1 - Number(balance1)) * (1 - (0.5 / 100))));
 
-    const swap: ContractTransactionResponse = await contract.swap(poolConfig.token0, poolConfig.token1, amountIn, amountOutMinimum);
+    const swap: ContractTransactionResponse = await contract.swapAndMint(poolConfig.token0, poolConfig.token1, amountIn, amountOutMinimum, info.lowerTick, info.upperTick);
     const timestamp: string = getTimestamp();
     const swapReceipt: ContractTransactionReceipt | null = await swap.wait(1);
     const gasUsed: bigint = swapReceipt!.gasUsed * swapReceipt!.gasPrice;

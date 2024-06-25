@@ -188,12 +188,12 @@ const bot = async (): Promise<void> => {
 
     // swap token1 to token0
     if (BigInt(Math.floor(swap0)) > b_amount0) {
-        swapData = await swapToken1ToToken0(contract, poolConfig, swap0, b_amount0, info.price, decimals0, decimals1);
+        swapData = await swapToken1ToToken0(contract, poolConfig, info, swap0, b_amount0, decimals0, decimals1);
         option = true;
     }
     // swap token0 to token1
     else if (BigInt(Math.floor(swap1)) > b_amount1) {
-        swapData = await swapToken0ToToken1(contract, poolConfig, swap1, b_amount1, info.price, decimals0, decimals1);
+        swapData = await swapToken0ToToken1(contract, poolConfig, info, swap1, b_amount1, decimals0, decimals1);
         option = false;
     }
     // in case the position was perfectly divided and no swap was needed
@@ -241,25 +241,25 @@ const bot = async (): Promise<void> => {
 
     customLog(`[${swapData.timestamp}] - Swap executed from ${option ? "token1" : "token0"} to ${option ? "token0" : "token1"}`);
 
-    const amount0ToMint: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
-    const amount1ToMint: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
-
-    const amount0Min: bigint = BigInt(Math.floor(Number(amount0ToMint) * (1 - MINT_SLIPPAGE_PERCENTAGE / 100)));
-    const amount1Min: bigint = BigInt(Math.floor(Number(amount1ToMint) * (1 - MINT_SLIPPAGE_PERCENTAGE / 100)));
-
-    // mint new position
-    const mint: ContractTransactionResponse = await contract.mintNewPosition(
-        amount0ToMint,
-        amount1ToMint,
-        amount0Min,
-        amount1Min,
-        info.lowerTick,
-        info.upperTick,
-    );
-
-    const mintTimestamp: string = getTimestamp();
-    const mintReceipt: ContractTransactionReceipt | null = await mint.wait(1);
-    const mintGasUsed: bigint = mintReceipt!.gasUsed * mintReceipt!.gasPrice;
+    // const amount0ToMint: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
+    // const amount1ToMint: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
+    //
+    // const amount0Min: bigint = BigInt(Math.floor(Number(amount0ToMint) * (1 - MINT_SLIPPAGE_PERCENTAGE / 100)));
+    // const amount1Min: bigint = BigInt(Math.floor(Number(amount1ToMint) * (1 - MINT_SLIPPAGE_PERCENTAGE / 100)));
+    //
+    // // mint new position
+    // const mint: ContractTransactionResponse = await contract.mintNewPosition(
+    //     amount0ToMint,
+    //     amount1ToMint,
+    //     amount0Min,
+    //     amount1Min,
+    //     info.lowerTick,
+    //     info.upperTick,
+    // );
+    //
+    // const mintTimestamp: string = getTimestamp();
+    // const mintReceipt: ContractTransactionReceipt | null = await mint.wait(1);
+    // const mintGasUsed: bigint = mintReceipt!.gasUsed * mintReceipt!.gasPrice;
 
     const newPositionData: IPositionData = await contract.positionData();
 
@@ -268,16 +268,16 @@ const bot = async (): Promise<void> => {
     fs.appendFile(".token_id", `${newPositionData.tokenId}`);
 
     const mintLogsParams: IMintLogs = {
-        timestamp: mintTimestamp,
+        timestamp: swapData.timestamp,
         tokenId: newPositionData.tokenId,
-        gasUsed: mintGasUsed,
+        gasUsed: swapData.gasUsed,
         lowerTick: info.lowerTick,
         upperTick: info.upperTick,
         lowerPrice: info.lowerPrice,
         upperPrice: info.upperPrice,
         price: info.price,
-        amount0ToMint: amount0ToMint,
-        amount1ToMint: amount1ToMint,
+        amount0ToMint: 0n,
+        amount1ToMint: 0n,
     };
 
     // Discord Webhook
@@ -285,7 +285,7 @@ const bot = async (): Promise<void> => {
     // Google Sheets API
     await sendMintLogsGSheet(doc, mintLogsParams);
 
-    customLog(`[${mintTimestamp}] - New position (Token ID: ${newPositionData.tokenId}) has been minted`);
+    customLog(`[${swapData.timestamp}] - New position (Token ID: ${newPositionData.tokenId}) has been minted`);
 
     // Approve contract to pull ownership of position NFT
     // Take in consideration gasUsed for approval is not computed in Google Sheets
