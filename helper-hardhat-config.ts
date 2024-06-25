@@ -71,6 +71,12 @@ const getTokenInfoCoinGecko = async (address: string): Promise<{ price: number; 
     const response: Response = await fetch(request0);
     const body = await response.json();
 
+    // add delay before retry when rate limited
+    if (body?.status?.error_code == 429) {
+        await sleep(10000);
+        return (await getTokenInfoCoinGecko(address));
+    }
+
     const symbol: string = (body.symbol as string).toUpperCase();
     const decimals: number = body.detail_platforms.ethereum.decimal_place;
     const price: number = body.market_data.current_price.usd;

@@ -5,6 +5,7 @@ gas-report.txt
 .todo
 /.config
 logs.txt
+.token_id
 
 # Jet Brains
 /.idea

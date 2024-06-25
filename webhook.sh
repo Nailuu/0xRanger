@@ -10,10 +10,10 @@ WEBHOOK_URL="https://discord.com/api/webhooks/$WEBHOOK_ID/$WEBHOOK_TOKEN/message
 # BODY
 DATE_TIME="`date "+%d/%m/%Y %H:%M:%S"`"
 STATUS="`pm2 ls | grep online | wc -l`"
-TOKEN_ID="`env | grep RANGER_TOKEN_ID`"
+TOKEN_ID="`cat .token_id`"
 POOL_LINK="none"
 
-if [ "$TOKEN_ID" != "" ]
+if [ "$TOKEN_ID" != "cat: .token_id: No such file or directory" ]
 then
   POOL_LINK="<https://app.uniswap.org/pool/$TOKEN_ID?chain=arbitrum>"
 fi

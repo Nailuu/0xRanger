@@ -27,7 +27,7 @@ import { IPriceRangeInfo } from "../types/IPriceRangeInfo";
 import { ISwapData } from "../types/ISwapData";
 import { ISwapLogs } from "../types/ISwapLogs";
 import { IMintLogs } from "../types/IMintLogs";
-import { exec } from 'child_process';
+import fs from "fs-extra";
 
 // docs: https://theoephraim.github.io/node-google-spreadsheet/#/
 import { GoogleSpreadsheet } from "google-spreadsheet";
@@ -52,7 +52,7 @@ const CONTRACT_ADDRESS: string = process.env.CONTRACT_ADDRESS!;
 const LOWER_RANGE_PERCENT: number = 0.25;
 const UPPER_RANGER_PERCENT: number = 0.25;
 const WITHDRAW_SLIPPAGE_PERCENTAGE: number = 0.1;
-const MINT_SLIPPAGE_PERCENTAGE: number = 1;
+const MINT_SLIPPAGE_PERCENTAGE: number = 10;
 
 // minutes
 const TICK_RANGE_CHECK_TIMEOUT: number = 5;
@@ -263,8 +263,8 @@ const bot = async (): Promise<void> => {
 
     const newPositionData: IPositionData = await contract.positionData();
 
-    // set env variable with tokenID of position for webhook.sh
-    exec(`export RANGER_TOKEN_ID=${newPositionData.tokenId}`);
+    // set tokenId in a hidden file for webhook.sh
+    fs.appendFile(".token_id", `${newPositionData.tokenId}`);
 
     const mintLogsParams: IMintLogs = {
         timestamp: mintTimestamp,
