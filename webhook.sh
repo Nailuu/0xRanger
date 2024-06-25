@@ -2,21 +2,16 @@
 PATH=`echo $PATH`
 
 # WEBHOOK INFOS
-WEBHOOK_TOKEN=""
-WEBHOOK_ID=""
-WEBHOOK_MESSAGE_ID=""
+WEBHOOK_TOKEN="snrjxXV01Mkrd1wCHa59pciTm3SQe42FH-r5IcXf7NGfQIyrfcvXKOqiha6et-BmaB_7"
+WEBHOOK_ID="1254881325568098344"
+WEBHOOK_MESSAGE_ID="1254887196683665420"
 WEBHOOK_URL="https://discord.com/api/webhooks/$WEBHOOK_ID/$WEBHOOK_TOKEN/messages/$WEBHOOK_MESSAGE_ID"
 
 # BODY
 DATE_TIME="`date "+%d/%m/%Y %H:%M:%S"`"
 STATUS="`pm2 ls | grep online | wc -l`"
 TOKEN_ID="`cat .token_id`"
-POOL_LINK="none"
-
-if [ "$TOKEN_ID" != "cat: .token_id: No such file or directory" ]
-then
-  POOL_LINK="<https://app.uniswap.org/pool/$TOKEN_ID?chain=arbitrum>"
-fi
+POOL_LINK="<https://app.uniswap.org/pool/$TOKEN_ID?chain=arbitrum>"
 
 if [ "$STATUS" == "0" ]
 then
@@ -41,9 +36,9 @@ discord_dev;
 echo -n $DATE_TIME >> .webhook.tmp;
 echo -n " - " >> .webhook.tmp;
 echo -n $STATUS >> .webhook.tmp;
+discord_dev;
 newline;
 echo -n $POOL_LINK >> .webhook.tmp;
-discord_dev;
 newline;
 discord_dev;
 # replace strange restart character with r

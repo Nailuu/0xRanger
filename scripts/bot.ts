@@ -264,6 +264,7 @@ const bot = async (): Promise<void> => {
     const newPositionData: IPositionData = await contract.positionData();
 
     // set tokenId in a hidden file for webhook.sh
+    await fs.remove(".token_id");
     fs.appendFile(".token_id", `${newPositionData.tokenId}`);
 
     const mintLogsParams: IMintLogs = {
