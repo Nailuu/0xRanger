@@ -5,8 +5,8 @@ import {
     ContractTransactionResponse,
     ContractTransactionReceipt,
 } from "ethers";
-import { sendErrorLogsWebhook } from "../../helper-hardhat-config";
-import { IERC20 } from "../../typechain-types";
+import { POOL, sendErrorLogsWebhook } from "../../helper-hardhat-config";
+import { IERC20, Ranger } from "../../typechain-types";
 
 const ARB_WETH: string = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
 
@@ -15,19 +15,18 @@ const DEBUG: boolean = true;
 // Parameters of Ranger.collect()
 // tokens = array of tokens address you wanna collect
 // withdrawETH = true if you wanna withdraw ETH from contract balance aswell
-const tokens: string[] = [];
+const tokens: string[] = [POOL.ARBITRUM.WETH, POOL.ARBITRUM.USDC];
 const withdrawETH: boolean = false;
+
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS!;
 
 const collect = async () => {
     const { deployer } = await getNamedAccounts();
 
-    const contractDeploymentInfo: Deployment = await deployments.get("Ranger");
-    const contract: Contract = await ethers.getContractAt(
-        contractDeploymentInfo.abi,
-        contractDeploymentInfo.address,
+    const contract: Ranger = await ethers.getContractAt(
+        "Ranger",
+        CONTRACT_ADDRESS,
     );
-
-    const contractAddress: string = await contract.getAddress();
 
     const tokensContract: IERC20[] = [];
     const symbols: string[] = [];
@@ -51,13 +50,13 @@ const collect = async () => {
         tokensContract.push(token);
 
         // Transactions will fail if it's not an ERC20 address
-        const symbol: string = await token.symbol();
-        symbols.push(symbol);
+        // const symbol: string = await token.symbol();
+        // symbols.push(symbol);
 
         const deployerBalance: bigint = await token.balanceOf(deployer);
         deployerBalanceBefore.push(deployerBalance);
 
-        console.log(`token${i}: ${symbol}`);
+        // console.log(`token${i}: ${symbol}`);
     }
 
     const deployerBalanceETH: bigint =
@@ -73,12 +72,10 @@ const collect = async () => {
         withdrawETH,
     );
     if (DEBUG) {
-        console.log("[DEBUG] collect(): \n", tx);
+        // console.log("[DEBUG] collect(): \n", tx);
     }
 
-    await tx.wait(1);
-
-    const receipt: ContractTransactionReceipt | null = await tx.wait();
+    const receipt: ContractTransactionReceipt | null = await tx.wait(1);
     const gasUsedInETH: bigint = receipt!.gasUsed * receipt!.gasPrice;
 
     console.log("Successfully collect!");

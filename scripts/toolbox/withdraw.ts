@@ -4,15 +4,17 @@ import { Contract } from "ethers";
 import { IPoolConfig } from "../../types/IPoolConfig";
 import { IPositionData } from "../../types/IPositionData";
 import { sendErrorLogsWebhook } from "../../helper-hardhat-config";
+import { Ranger } from "../../typechain-types";
 
 const SLIPPAGE: number = 1 - 0.1 / 100;
 const DEBUG: boolean = true;
 
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS!;
+
 const withdraw = async () => {
-    const contractDeploymentInfo: Deployment = await deployments.get("Ranger");
-    const contract: Contract = await ethers.getContractAt(
-        contractDeploymentInfo.abi,
-        contractDeploymentInfo.address,
+    const contract: Ranger = await ethers.getContractAt(
+        "Ranger",
+        CONTRACT_ADDRESS,
     );
 
     const poolConfig: IPoolConfig = await contract.poolConfig();
