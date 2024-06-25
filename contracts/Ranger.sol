@@ -475,16 +475,16 @@ contract Ranger is IERC721Receiver {
             IERC20(poolConfig.token0).balanceOf(address(this)),
             IERC20(poolConfig.token1).balanceOf(address(this))
         );
-        (uint256 amount0min, uint256 amount1min) = (
-            amount0 - amount0 / 200,
-            amount1 - amount1 / 200
-        );
+//        (uint256 amount0min, uint256 amount1min) = (
+//            amount0 - amount0 / 200,
+//            amount1 - amount1 / 200
+//        );
 
         mintNewPosition(
             amount0,
             amount1,
-            amount0min,
-            amount1min,
+            0,
+            0,
             lowerTick,
             upperTick
         );
