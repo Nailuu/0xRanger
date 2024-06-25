@@ -13,7 +13,6 @@ import { TickMath, nearestUsableTick } from "@uniswap/v3-sdk";
 import { IPriceRangeInfo } from "./types/IPriceRangeInfo";
 import { ContractTransactionReceipt, ContractTransactionResponse } from "ethers";
 import { ISwapData } from "./types/ISwapData";
-import { IPositionData } from "./types/IPositionData";
 import JSBI from "jsbi";
 import { ISwapLogs } from "./types/ISwapLogs";
 import { IMintLogs } from "./types/IMintLogs";

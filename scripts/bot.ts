@@ -27,7 +27,7 @@ import { IPriceRangeInfo } from "../types/IPriceRangeInfo";
 import { ISwapData } from "../types/ISwapData";
 import { ISwapLogs } from "../types/ISwapLogs";
 import { IMintLogs } from "../types/IMintLogs";
-import fs from "fs-extra";
+import { exec } from 'child_process';
 
 // docs: https://theoephraim.github.io/node-google-spreadsheet/#/
 import { GoogleSpreadsheet } from "google-spreadsheet";
@@ -48,13 +48,14 @@ const jwt: JWT = new JWT({
 
 const doc: GoogleSpreadsheet = new GoogleSpreadsheet(SPREADSHEET_ID, jwt);
 
-const CONTRACT_ADDRESS: string = "0x51d019355b13EdC852d97BcCe0f844F51a833378";
-const LOWER_RANGE_PERCENT: number = 2.5;
-const UPPER_RANGER_PERCENT: number = 2.5;
+const CONTRACT_ADDRESS: string = process.env.CONTRACT_ADDRESS!;
+const LOWER_RANGE_PERCENT: number = 0.25;
+const UPPER_RANGER_PERCENT: number = 0.25;
+const WITHDRAW_SLIPPAGE_PERCENTAGE: number = 0.1;
+const MINT_SLIPPAGE_PERCENTAGE: number = 1;
 
 // minutes
 const TICK_RANGE_CHECK_TIMEOUT: number = 5;
-const SLIPPAGE: number = 1 - 0.1 / 100;
 
 const bot = async (): Promise<void> => {
     const contract: Ranger = await ethers.getContractAt(
@@ -106,7 +107,7 @@ const bot = async (): Promise<void> => {
                 positionData.tickUpper,
             );
 
-            const amountsMin: bigint[] = getSlippageForAmount(SLIPPAGE, amounts.amount0, amounts.amount1);
+            const amountsMin: bigint[] = getSlippageForAmount(1 - WITHDRAW_SLIPPAGE_PERCENTAGE / 100, amounts.amount0, amounts.amount1);
 
             // withdraw liquidity and collect fees
             const withdraw: ContractTransactionResponse = await contract.withdrawLiquidity(amountsMin[0], amountsMin[1]);
@@ -243,8 +244,8 @@ const bot = async (): Promise<void> => {
     const amount0ToMint: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
     const amount1ToMint: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
 
-    const amount0Min: bigint = BigInt(Math.floor(Number(amount0ToMint) * (1 - 1 / 100)));
-    const amount1Min: bigint = BigInt(Math.floor(Number(amount1ToMint) * (1 - 1 / 100)));
+    const amount0Min: bigint = BigInt(Math.floor(Number(amount0ToMint) * (1 - MINT_SLIPPAGE_PERCENTAGE / 100)));
+    const amount1Min: bigint = BigInt(Math.floor(Number(amount1ToMint) * (1 - MINT_SLIPPAGE_PERCENTAGE / 100)));
 
     // mint new position
     const mint: ContractTransactionResponse = await contract.mintNewPosition(
@@ -261,6 +262,9 @@ const bot = async (): Promise<void> => {
     const mintGasUsed: bigint = mintReceipt!.gasUsed * mintReceipt!.gasPrice;
 
     const newPositionData: IPositionData = await contract.positionData();
+
+    // set env variable with tokenID of position for webhook.sh
+    exec(`export RANGER_TOKEN_ID=${newPositionData.tokenId}`);
 
     const mintLogsParams: IMintLogs = {
         timestamp: mintTimestamp,
