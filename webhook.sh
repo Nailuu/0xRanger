@@ -12,7 +12,7 @@ WEBHOOK_URL="https://discord.com/api/webhooks/$WEBHOOK_ID/$WEBHOOK_TOKEN/message
 # BODY
 DATE_TIME="`date "+%d/%m/%Y %H:%M:%S"`"
 STATUS="`pm2 ls | grep online | wc -l`"
-TOKEN_ID="`cat .token_id`"
+TOKEN_ID="`cat /home/ubuntu/0xRanger/.token_id`"
 POOL_LINK="<https://app.uniswap.org/pool/$TOKEN_ID?chain=arbitrum>"
 
 if [ "$STATUS" == "0" ]
