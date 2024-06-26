@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 PATH=`echo $PATH`
 
-source .env.discord
+export $(xargs < /home/ubuntu/0xRanger/.env.discord)
 
 # WEBHOOK INFOS
 WEBHOOK_TOKEN="`printenv WEBHOOK_TOKEN`"
