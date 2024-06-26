@@ -197,8 +197,6 @@ contract Ranger is IERC721Receiver {
     /// @notice mint new Uniswap V3 LP position with given parameters
     /// @param amount0ToMint amount of token0 you want to send in the position
     /// @param amount1ToMint amount of token1 you want to send in the position
-    /// @param amount0Min minimum amount0ToMint to put in the position for slippage protection, send amount0ToMint - 0.1%
-    /// @param amount1Min minimum amount1ToMint to put in the position for slippage protection, send amount1ToMint - 0.1%
     /// @param lowerTick lower tick for Uniswap V3 LP position range, the tick need to be initalized (see TickSpacing)
     /// @param upperTick upper tick for Uniswap V3 LP position range, the tick need to be initalized (see TickSpacing)
     /** @dev the minted position's ownership will be transfered to the owner for security reason,
@@ -206,12 +204,10 @@ contract Ranger is IERC721Receiver {
     function mintNewPosition(
         uint256 amount0ToMint,
         uint256 amount1ToMint,
-        uint256 amount0Min,
-        uint256 amount1Min,
         int24 lowerTick,
         int24 upperTick
     )
-        public
+        external
         onlyOwner
         returns (
             uint256 tokenId,
@@ -245,9 +241,8 @@ contract Ranger is IERC721Receiver {
                 tickUpper: upperTick,
                 amount0Desired: amount0ToMint,
                 amount1Desired: amount1ToMint,
-                // amountXMin - (amountXMin / 1000) to substract 0.1% with small rounding error
-                amount0Min: amount0Min,
-                amount1Min: amount1Min,
+                amount0Min: 0,
+                amount1Min: 0,
                 recipient: address(this),
                 deadline: block.timestamp
             })
@@ -441,19 +436,15 @@ contract Ranger is IERC721Receiver {
     /// @param tokenIn Address of the tokenX (input)
     /// @param tokenOut Address of the tokenY (output)
     /// @param amountIn Amount of tokenX that you want to swap to tokenY
-    /// @param lowerTick lowerTick for minting
-    /// @param upperTick upperTick for minting
     /** @dev Careful amountIn has to be in decimals of the tokenIn
     (e.g. for WETH, 18 decimals and you want to provide 1 WETH = 1 * 1e18)
     **/
     /// @param amountOutMinimum Safety minimum amount to receive in tokenY otherwise revert
-    function swapAndMint(
+    function swap(
         address tokenIn,
         address tokenOut,
         uint256 amountIn,
-        uint256 amountOutMinimum,
-        int24 lowerTick,
-        int24 upperTick
+        uint256 amountOutMinimum
     ) external onlyOwner {
         TransferHelper.safeApprove(tokenIn, address(ROUTER), amountIn);
 
@@ -469,24 +460,6 @@ contract Ranger is IERC721Receiver {
                 amountOutMinimum: amountOutMinimum,
                 sqrtPriceLimitX96: 0
             })
-        );
-
-        (uint256 amount0, uint256 amount1) = (
-            IERC20(poolConfig.token0).balanceOf(address(this)),
-            IERC20(poolConfig.token1).balanceOf(address(this))
-        );
-//        (uint256 amount0min, uint256 amount1min) = (
-//            amount0 - amount0 / 200,
-//            amount1 - amount1 / 200
-//        );
-
-        mintNewPosition(
-            amount0,
-            amount1,
-            0,
-            0,
-            lowerTick,
-            upperTick
         );
     }
 }

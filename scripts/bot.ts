@@ -5,7 +5,7 @@ import {
     sendErrorLogsWebhook, sendMintLogsGSheet, sendMintLogsWebhook, sendSwapLogsGSheet, sendSwapLogsWebhook,
     sendWithdrawLogsGSheet,
     sendWithdrawLogsWebhook,
-    sleep, swapToken0ToToken1, swapToken1ToToken0, NFMP_ADDRESS, POOL, customLog,
+    sleep, swapToken0ToToken1, swapToken1ToToken0, NFMP_ADDRESS, POOL, customLog, CONTRACT_ADDRESS,
 } from "../helper-hardhat-config";
 import { IPoolConfig } from "../types/IPoolConfig";
 import {
@@ -48,11 +48,9 @@ const jwt: JWT = new JWT({
 
 const doc: GoogleSpreadsheet = new GoogleSpreadsheet(SPREADSHEET_ID, jwt);
 
-const CONTRACT_ADDRESS: string = process.env.CONTRACT_ADDRESS!;
 const LOWER_RANGE_PERCENT: number = 0.25;
 const UPPER_RANGER_PERCENT: number = 0.25;
 const WITHDRAW_SLIPPAGE_PERCENTAGE: number = 0.1;
-const MINT_SLIPPAGE_PERCENTAGE: number = 10;
 
 // minutes
 const TICK_RANGE_CHECK_TIMEOUT: number = 5;
@@ -141,7 +139,7 @@ const bot = async (): Promise<void> => {
             // Discord Webhook
             await sendWithdrawLogsWebhook(data, poolConfig);
             // Google Sheets API
-            await sendWithdrawLogsGSheet(doc, data, poolConfig);
+            await sendWithdrawLogsGSheet(doc, data, token0, token1);
 
             customLog(`[${timestamp}] - Position (Token ID: ${positionData.tokenId}) has been withdrawn`);
             break;
@@ -237,29 +235,24 @@ const bot = async (): Promise<void> => {
     // Discord Webhook
     await sendSwapLogsWebhook(swapLogsParams);
     // Google Sheets API
-    await sendSwapLogsGSheet(doc, swapLogsParams);
+    await sendSwapLogsGSheet(doc, swapLogsParams, poolConfig);
 
     customLog(`[${swapData.timestamp}] - Swap executed from ${option ? "token1" : "token0"} to ${option ? "token0" : "token1"}`);
 
-    // const amount0ToMint: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
-    // const amount1ToMint: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
-    //
-    // const amount0Min: bigint = BigInt(Math.floor(Number(amount0ToMint) * (1 - MINT_SLIPPAGE_PERCENTAGE / 100)));
-    // const amount1Min: bigint = BigInt(Math.floor(Number(amount1ToMint) * (1 - MINT_SLIPPAGE_PERCENTAGE / 100)));
-    //
-    // // mint new position
-    // const mint: ContractTransactionResponse = await contract.mintNewPosition(
-    //     amount0ToMint,
-    //     amount1ToMint,
-    //     amount0Min,
-    //     amount1Min,
-    //     info.lowerTick,
-    //     info.upperTick,
-    // );
-    //
-    // const mintTimestamp: string = getTimestamp();
-    // const mintReceipt: ContractTransactionReceipt | null = await mint.wait(1);
-    // const mintGasUsed: bigint = mintReceipt!.gasUsed * mintReceipt!.gasPrice;
+    const amount0ToMint: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
+    const amount1ToMint: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
+    
+    // mint new position
+    const mint: ContractTransactionResponse = await contract.mintNewPosition(
+        amount0ToMint,
+        amount1ToMint,
+        info.lowerTick,
+        info.upperTick,
+    );
+    
+    const mintTimestamp: string = getTimestamp();
+    const mintReceipt: ContractTransactionReceipt | null = await mint.wait(1);
+    const mintGasUsed: bigint = mintReceipt!.gasUsed * mintReceipt!.gasPrice;
 
     const newPositionData: IPositionData = await contract.positionData();
 
@@ -268,24 +261,24 @@ const bot = async (): Promise<void> => {
     fs.appendFile(".token_id", `${newPositionData.tokenId}`);
 
     const mintLogsParams: IMintLogs = {
-        timestamp: swapData.timestamp,
+        timestamp: mintTimestamp,
         tokenId: newPositionData.tokenId,
-        gasUsed: swapData.gasUsed,
+        gasUsed: mintGasUsed,
         lowerTick: info.lowerTick,
         upperTick: info.upperTick,
         lowerPrice: info.lowerPrice,
         upperPrice: info.upperPrice,
         price: info.price,
-        amount0ToMint: 0n,
-        amount1ToMint: 0n,
+        amount0ToMint: amount0ToMint,
+        amount1ToMint: amount1ToMint,
     };
 
     // Discord Webhook
     await sendMintLogsWebhook(mintLogsParams);
     // Google Sheets API
-    await sendMintLogsGSheet(doc, mintLogsParams);
+    await sendMintLogsGSheet(doc, mintLogsParams, token0, token1);
 
-    customLog(`[${swapData.timestamp}] - New position (Token ID: ${newPositionData.tokenId}) has been minted`);
+    customLog(`[${mintTimestamp}] - New position (Token ID: ${newPositionData.tokenId}) has been minted`);
 
     // Approve contract to pull ownership of position NFT
     // Take in consideration gasUsed for approval is not computed in Google Sheets

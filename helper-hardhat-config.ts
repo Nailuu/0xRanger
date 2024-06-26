@@ -8,7 +8,7 @@ import {
 } from "google-spreadsheet";
 import { IWithdrawLogs } from "./types/IWithdrawLogs";
 import { IPoolConfig } from "./types/IPoolConfig";
-import { Ranger } from "./typechain-types";
+import { IERC20, Ranger } from "./typechain-types";
 import { TickMath, nearestUsableTick } from "@uniswap/v3-sdk";
 import { IPriceRangeInfo } from "./types/IPriceRangeInfo";
 import { ContractTransactionReceipt, ContractTransactionResponse } from "ethers";
@@ -44,15 +44,13 @@ const WHALE = {
 };
 
 const NFMP_ADDRESS: string = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88";
-const WETH_ADDRESS: string = "0x3368e17064C9BA5D6f1F93C4c678bea00cc78555";
 
-const DISCORD_WEBHOOK_URL_ERROR: string =
-    process.env.DISCORD_WEBHOOK_URL_ERROR!;
-const DISCORD_WEBHOOK_URL_WITHDRAW: string =
-    process.env.DISCORD_WEBHOOK_URL_WITHDRAW!;
+const DISCORD_WEBHOOK_URL_ERROR: string = process.env.DISCORD_WEBHOOK_URL_ERROR!;
+const DISCORD_WEBHOOK_URL_WITHDRAW: string = process.env.DISCORD_WEBHOOK_URL_WITHDRAW!;
 const DISCORD_WEBHOOK_URL_MINT: string = process.env.DISCORD_WEBHOOK_URL_MINT!;
 const DISCORD_WEBHOOK_URL_SWAP: string = process.env.DISCORD_WEBHOOK_URL_SWAP!;
-const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY!;
+const COINGECKO_API_KEY: string = process.env.COINGECKO_API_KEY!;
+const CONTRACT_ADDRESS: string = process.env.CONTRACT_ADDRESS!;
 
 const getTokenInfoCoinGecko = async (address: string): Promise<{ price: number; symbol: string; decimals: number }> => {
     const headers: Headers = new Headers();
@@ -60,7 +58,7 @@ const getTokenInfoCoinGecko = async (address: string): Promise<{ price: number; 
     headers.set("X-CG_DEMO_API_KEY", COINGECKO_API_KEY);
     headers.set("accept", "application/json");
 
-    const request0: RequestInfo = new Request(
+    const request: RequestInfo = new Request(
         `https://api.coingecko.com/api/v3/coins/arbitrum-one/contract/${address}`,
         {
             method: "GET",
@@ -68,7 +66,7 @@ const getTokenInfoCoinGecko = async (address: string): Promise<{ price: number; 
         },
     );
 
-    const response: Response = await fetch(request0);
+    const response: Response = await fetch(request);
     const body = await response.json();
 
     // add delay before retry when rate limited
@@ -83,6 +81,32 @@ const getTokenInfoCoinGecko = async (address: string): Promise<{ price: number; 
 
     return { price, symbol, decimals };
 };
+
+const getEthereumPriceCoinGecko = async (): Promise<number> => {
+    const headers: Headers = new Headers();
+
+    headers.set("X-CG_DEMO_API_KEY", COINGECKO_API_KEY);
+    headers.set("accept", "application/json");
+
+    const request: RequestInfo = new Request(
+        `https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd`,
+        {
+            method: "GET",
+            headers: headers,
+        },
+    );
+
+    const response: Response = await fetch(request);
+    const body = await response.json();
+
+    // add delay before retry when rate limited
+    if (body?.status?.error_code == 429) {
+        await sleep(10000);
+        return (await getEthereumPriceCoinGecko());
+    }
+
+    return (body?.ethereum?.usd);
+}
 
 // Return amount0 - slippage percent and amount1 - slippage percent
 const getSlippageForAmount = (
@@ -157,6 +181,80 @@ const sendWithdrawLogsWebhook = async (data: IWithdrawLogs, poolConfig: IPoolCon
     });
 };
 
+const sendWithdrawLogsGSheet = async (
+    doc: GoogleSpreadsheet,
+    data: IWithdrawLogs,
+    token0: IERC20,
+    token1: IERC20,
+): Promise<void> => {
+    // you have to share the gsheet to GOOGLE_CLIENT_EMAIL
+    await doc.loadInfo();
+
+    const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Withdraw DB"];
+
+    const eth_price: number = await getEthereumPriceCoinGecko();
+    const usdGasUsed: number = Number(data.gasUsed) / 1e18 * eth_price;
+
+    const cg_token0 = await getTokenInfoCoinGecko(await token0.getAddress());
+    const cg_token1 = await getTokenInfoCoinGecko(await token1.getAddress());
+
+    const price_amount0 = (
+        (Number(data.amount0) / 10 ** cg_token0.decimals) *
+        cg_token0.price
+    ).toFixed(4);
+    const price_amount1 = (
+        (Number(data.amount1) / 10 ** cg_token1.decimals) *
+        cg_token1.price
+    ).toFixed(4);
+
+    const price_fee0 = (
+        (Number(data.fee0) / 10 ** cg_token0.decimals) *
+        cg_token0.price
+    ).toFixed(4);
+    const price_fee1 = (
+        (Number(data.fee1) / 10 ** cg_token1.decimals) *
+        cg_token1.price
+    ).toFixed(4);
+
+    const balance0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
+    const balance1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
+
+    const usd_balance0 = (
+        (Number(balance0) / 10 ** cg_token0.decimals) *
+        cg_token0.price
+    ).toFixed(4);
+    const usd_balance1 = (
+        (Number(balance1) / 10 ** cg_token1.decimals) *
+        cg_token1.price
+    ).toFixed(4);
+
+    const row: GoogleSpreadsheetRow = await sheet.addRow({
+        timestamp: data.timestamp,
+        tokenId: data.tokenId.toString(),
+        gasUsed: data.gasUsed.toString(),
+        usdGasUsed: usdGasUsed.toString(),
+        tick: data.tick.toString(),
+        lowerTick: data.lowerTick.toString(),
+        upperTick: data.upperTick.toString(),
+        amount0: data.amount0.toString(),
+        amount1: data.amount1.toString(),
+        fee0: data.fee0.toString(),
+        fee1: data.fee1.toString(),
+        b_amount0: data.b_amount0.toString(),
+        b_amount1: data.b_amount1.toString(),
+        a_amount0: data.a_amount0.toString(),
+        a_amount1: data.a_amount1.toString(),
+        usd_amount0: price_amount0.toString(),
+        usd_amount1: price_amount1.toString(),
+        usd_fee0: price_fee0.toString(),
+        usd_fee1: price_fee1.toString(),
+        usd_balance0: usd_balance0.toString(),
+        usd_balance1: usd_balance1.toString(),
+    });
+
+    await row.save();
+};
+
 const sendMintLogsWebhook = async (params: IMintLogs): Promise<void> => {
     const webhookClient: WebhookClient = new WebhookClient({
         url: DISCORD_WEBHOOK_URL_MINT,
@@ -178,20 +276,50 @@ const sendMintLogsWebhook = async (params: IMintLogs): Promise<void> => {
 };
 
 // doc, mintTimestamp, mintGasUsed, amount0ToMint, amount1ToMint, newPositionData, params
-const sendMintLogsGSheet = async (doc: GoogleSpreadsheet, params: IMintLogs): Promise<void> => {
+const sendMintLogsGSheet = async (doc: GoogleSpreadsheet, params: IMintLogs, token0: IERC20, token1: IERC20): Promise<void> => {
     // you have to share the gsheet to GOOGLE_CLIENT_EMAIL
     await doc.loadInfo();
 
     const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Mint DB"];
 
+    const eth_price: number = await getEthereumPriceCoinGecko();
+    const usdGasUsed: number = Number(params.gasUsed) / 1e18 * eth_price;
+
+    const gc_token0 = await getTokenInfoCoinGecko(await token0.getAddress());
+    const gc_token1 = await getTokenInfoCoinGecko(await token1.getAddress());
+
+    const usd_amount0Mint = (
+        (Number(params.amount0ToMint) / 10 ** gc_token0.decimals) *
+        gc_token0.price
+    )
+    const usd_amount1Mint = (
+        (Number(params.amount1ToMint) / 10 ** gc_token1.decimals) *
+        gc_token1.price
+    )
+
+    const balance0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
+    const balance1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
+
+    const usd_balance0 = (
+        (Number(balance0) / 10 ** gc_token0.decimals) *
+        gc_token0.price
+    )
+    const usd_balance1 = (
+        (Number(balance1) / 10 ** gc_token1.decimals) *
+        gc_token1.price
+    )
+
     const row: GoogleSpreadsheetRow = await sheet.addRow({
         timestamp: params.timestamp,
         tokenId: params.tokenId.toString(),
         gasUsed: params.gasUsed.toString(),
+        usdGasUsed: usdGasUsed.toString(),
         lowerTick: params.lowerTick.toString(),
         upperTick: params.upperTick.toString(),
         amount0Mint: params.amount0ToMint.toString(),
         amount1Mint: params.amount1ToMint.toString(),
+        usd_balance_before: (usd_amount0Mint + usd_amount1Mint).toFixed(4),
+        usd_balance_after: (usd_balance0 + usd_balance1).toFixed(4),
     });
 
     await row.save();
@@ -224,15 +352,39 @@ const sendSwapLogsWebhook = async (params: ISwapLogs): Promise<void> => {
     });
 };
 
-const sendSwapLogsGSheet = async (doc: GoogleSpreadsheet, params: ISwapLogs): Promise<void> => {
+const sendSwapLogsGSheet = async (doc: GoogleSpreadsheet, params: ISwapLogs, poolConfig: IPoolConfig): Promise<void> => {
     // you have to share the gsheet to GOOGLE_CLIENT_EMAIL
     await doc.loadInfo();
 
     const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Swap DB"];
 
+    const eth_price: number = await getEthereumPriceCoinGecko();
+    const usdGasUsed: number = Number(params.gasUsed) / 1e18 * eth_price;
+
+    const token0 = await getTokenInfoCoinGecko(poolConfig.token0);
+    const token1 = await getTokenInfoCoinGecko(poolConfig.token1);
+
+    const usd_b_amount0: string = (
+        (Number(params.b_amount0) / 10 ** token0.decimals) *
+        token0.price
+    ).toFixed(4);
+    const usd_b_amount1: string = (
+        (Number(params.b_amount1) / 10 ** token1.decimals) *
+        token1.price
+    ).toFixed(4);
+    const usd_a_amount0: string = (
+        (Number(params.a_amount0) / 10 ** token0.decimals) *
+        token0.price
+    ).toFixed(4);
+    const usd_a_amount1: string = (
+        (Number(params.a_amount1) / 10 ** token1.decimals) *
+        token1.price
+    ).toFixed(4);
+
     const row: GoogleSpreadsheetRow = await sheet.addRow({
         timestamp: params.timestamp,
         gasUsed: params.gasUsed.toString(),
+        usdGasUsed: usdGasUsed.toString(),
         "0to1": !params.option,
         "1to0": params.option,
         b_amount0: params.b_amount0.toString(),
@@ -250,7 +402,11 @@ const sendSwapLogsGSheet = async (doc: GoogleSpreadsheet, params: ISwapLogs): Pr
         upperPrice: params.upperPrice.toString(),
         price: params.price.toString(),
         ratio0: params.ratio0.toString(),
-        ratio1: params.ratio1.toString()
+        ratio1: params.ratio1.toString(),
+        usd_b_amount0: usd_b_amount0,
+        usd_b_amount1: usd_b_amount1,
+        usd_a_amount0: usd_a_amount0,
+        usd_a_amount1: usd_a_amount1,
     });
 
     await row.save();
@@ -262,61 +418,6 @@ const sleep = (delay: number): Promise<unknown> =>
 const getTimestamp = (): string => {
     const now: Date = new Date(Date.now());
     return now.toLocaleString("fr-FR");
-};
-
-const sendWithdrawLogsGSheet = async (
-    doc: GoogleSpreadsheet,
-    data: IWithdrawLogs,
-    poolConfig: IPoolConfig,
-): Promise<void> => {
-    // you have to share the gsheet to GOOGLE_CLIENT_EMAIL
-    await doc.loadInfo();
-
-    const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Withdraw DB"];
-
-    const token0 = await getTokenInfoCoinGecko(poolConfig.token0);
-    const token1 = await getTokenInfoCoinGecko(poolConfig.token1);
-
-    const price_amount0 = (
-        (Number(data.amount0) / 10 ** token0.decimals) *
-        token0.price
-    ).toFixed(4);
-    const price_amount1 = (
-        (Number(data.amount1) / 10 ** token1.decimals) *
-        token1.price
-    ).toFixed(4);
-
-    const price_fee0 = (
-        (Number(data.fee0) / 10 ** token0.decimals) *
-        token0.price
-    ).toFixed(4);
-    const price_fee1 = (
-        (Number(data.fee1) / 10 ** token1.decimals) *
-        token1.price
-    ).toFixed(4);
-
-    const row: GoogleSpreadsheetRow = await sheet.addRow({
-        timestamp: data.timestamp,
-        tokenId: data.tokenId.toString(),
-        gasUsed: data.gasUsed.toString(),
-        tick: data.tick.toString(),
-        lowerTick: data.lowerTick.toString(),
-        upperTick: data.upperTick.toString(),
-        amount0: data.amount0.toString(),
-        amount1: data.amount1.toString(),
-        fee0: data.fee0.toString(),
-        fee1: data.fee1.toString(),
-        b_amount0: data.b_amount0.toString(),
-        b_amount1: data.b_amount1.toString(),
-        a_amount0: data.a_amount0.toString(),
-        a_amount1: data.a_amount1.toString(),
-        usd_amount0: price_amount0.toString(),
-        usd_amount1: price_amount1.toString(),
-        usd_fee0: price_fee0.toString(),
-        usd_fee1: price_fee1.toString(),
-    });
-
-    await row.save();
 };
 
 const getPriceOracle = async (contract: Ranger, pool: string, decimals0: number, decimals1: number): Promise<number> => {
@@ -431,7 +532,7 @@ const swapToken1ToToken0 = async (contract: Ranger, poolConfig: IPoolConfig, inf
     const amountIn: bigint = BigInt(Math.floor(((swap0 - Number(balance0)) / (10 ** decimals0) * info.price) * (10 ** decimals1)));
     const amountOutMinimum: bigint = BigInt(Math.floor((swap0 - Number(balance0)) * (1 - (0.5 / 100))));
 
-    const swap: ContractTransactionResponse = await contract.swapAndMint(poolConfig.token1, poolConfig.token0, amountIn, amountOutMinimum, info.lowerTick, info.upperTick);
+    const swap: ContractTransactionResponse = await contract.swap(poolConfig.token1, poolConfig.token0, amountIn, amountOutMinimum);
     const timestamp: string = getTimestamp();
     const swapReceipt: ContractTransactionReceipt | null = await swap.wait(1);
     const gasUsed: bigint = swapReceipt!.gasUsed * swapReceipt!.gasPrice;
@@ -443,7 +544,7 @@ const swapToken0ToToken1 = async (contract: Ranger, poolConfig: IPoolConfig, inf
     const amountIn: bigint = BigInt(Math.floor((swap1 - Number(balance1)) / (10 ** decimals1) / info.price * (10 ** decimals0)));
     const amountOutMinimum: bigint = BigInt(Math.floor((swap1 - Number(balance1)) * (1 - (0.5 / 100))));
 
-    const swap: ContractTransactionResponse = await contract.swapAndMint(poolConfig.token0, poolConfig.token1, amountIn, amountOutMinimum, info.lowerTick, info.upperTick);
+    const swap: ContractTransactionResponse = await contract.swap(poolConfig.token0, poolConfig.token1, amountIn, amountOutMinimum);
     const timestamp: string = getTimestamp();
     const swapReceipt: ContractTransactionReceipt | null = await swap.wait(1);
     const gasUsed: bigint = swapReceipt!.gasUsed * swapReceipt!.gasPrice;
@@ -461,6 +562,7 @@ export {
     WHALE,
     NFMP_ADDRESS,
     WETH_ADDRESS,
+    CONTRACT_ADDRESS,
     getSlippageForAmount,
     sendErrorLogsWebhook,
     sleep,
@@ -482,5 +584,6 @@ export {
     getRatioOfTokensAtPrice,
     swapToken1ToToken0,
     swapToken0ToToken1,
-    customLog
+    customLog,
+    getEthereumPriceCoinGecko
 };

@@ -5,7 +5,7 @@ import {
     ContractTransactionResponse,
     ContractTransactionReceipt,
 } from "ethers";
-import { POOL, sendErrorLogsWebhook } from "../../helper-hardhat-config";
+import { CONTRACT_ADDRESS, POOL, sendErrorLogsWebhook } from "../../helper-hardhat-config";
 import { IERC20, Ranger } from "../../typechain-types";
 
 const ARB_WETH: string = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
@@ -17,8 +17,6 @@ const DEBUG: boolean = true;
 // withdrawETH = true if you wanna withdraw ETH from contract balance aswell
 const tokens: string[] = [POOL.ARBITRUM.WETH, POOL.ARBITRUM.USDC];
 const withdrawETH: boolean = false;
-
-const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS!;
 
 const collect = async () => {
     const { deployer } = await getNamedAccounts();

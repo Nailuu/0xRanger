@@ -1,4 +1,5 @@
 .env
+.env.discord
 .webhook.tmp
 node_modules
 gas-report.txt
