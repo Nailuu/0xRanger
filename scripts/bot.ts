@@ -48,14 +48,19 @@ const jwt: JWT = new JWT({
 
 const doc: GoogleSpreadsheet = new GoogleSpreadsheet(SPREADSHEET_ID, jwt);
 
-const LOWER_RANGE_PERCENT: number = 0.25;
-const UPPER_RANGER_PERCENT: number = 0.25;
+const LOWER_RANGE_PERCENT: string | undefined = process.env.LOWER_RANGE_PERCENT;
+const UPPER_RANGER_PERCENT: string | undefined = process.env.UPPER_RANGE_PERCENT;
 const WITHDRAW_SLIPPAGE_PERCENTAGE: number = 0.1;
 
 // minutes
 const TICK_RANGE_CHECK_TIMEOUT: number = 5;
 
 const bot = async (): Promise<void> => {
+    if (LOWER_RANGE_PERCENT == undefined || UPPER_RANGER_PERCENT == undefined) {
+        customLog(`[${getTimestamp()}] - Upper and lower range percent are not defined`);
+        throw new Error("Upper and lower range percent are not defined");
+    }
+
     const contract: Ranger = await ethers.getContractAt(
         "Ranger",
         CONTRACT_ADDRESS,
