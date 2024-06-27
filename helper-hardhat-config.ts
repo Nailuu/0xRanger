@@ -190,7 +190,7 @@ const sendWithdrawLogsGSheet = async (
     // you have to share the gsheet to GOOGLE_CLIENT_EMAIL
     await doc.loadInfo();
 
-    const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Withdraw DB"];
+    const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Withdraw"];
 
     const eth_price: number = await getEthereumPriceCoinGecko();
     const usdGasUsed: number = Number(data.gasUsed) / 1e18 * eth_price;
@@ -280,7 +280,7 @@ const sendMintLogsGSheet = async (doc: GoogleSpreadsheet, params: IMintLogs, tok
     // you have to share the gsheet to GOOGLE_CLIENT_EMAIL
     await doc.loadInfo();
 
-    const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Mint DB"];
+    const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Mint"];
 
     const eth_price: number = await getEthereumPriceCoinGecko();
     const usdGasUsed: number = Number(params.gasUsed) / 1e18 * eth_price;
@@ -356,7 +356,7 @@ const sendSwapLogsGSheet = async (doc: GoogleSpreadsheet, params: ISwapLogs, poo
     // you have to share the gsheet to GOOGLE_CLIENT_EMAIL
     await doc.loadInfo();
 
-    const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Swap DB"];
+    const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Swap"];
 
     const eth_price: number = await getEthereumPriceCoinGecko();
     const usdGasUsed: number = Number(params.gasUsed) / 1e18 * eth_price;
