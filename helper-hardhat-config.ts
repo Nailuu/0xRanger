@@ -417,7 +417,7 @@ const sleep = (delay: number): Promise<unknown> =>
 
 const getTimestamp = (): string => {
     const now: Date = new Date(Date.now());
-    return now.toLocaleString("fr-FR");
+    return now.toLocaleString("en-US");
 };
 
 const getPriceOracle = async (contract: Ranger, pool: string, decimals0: number, decimals1: number): Promise<number> => {
