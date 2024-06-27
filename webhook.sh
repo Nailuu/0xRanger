@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-PATH=`echo $PATH`
 
-PATH_TO_FOLDER="/home/nailu/Solidity/0xRanger"
+# CHANGE PATH (paste = echo $PATH) AND PATH_TO_FOLDER to absolute path to 0xRanger folder
+PATH=""
+PATH_TO_FOLDER=""
 
 export $(xargs < $PATH_TO_FOLDER/.env.discord)
 
@@ -61,4 +62,4 @@ fi
 echo -n "\"}" >> .webhook.tmp;
 
 # SEND POST REQUEST TO WEBHOOK
-curl -X PATCH -H "Content-Type: application/json" -d @.webhook.tmp $WEBHOOK_URL > /dev/null;
+curl -X PATCH -H "Content-Type: application/json" -d @.webhook.tmp $WEBHOOK_URL;
