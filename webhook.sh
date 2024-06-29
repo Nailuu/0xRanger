@@ -6,6 +6,9 @@ PATH_TO_FOLDER=""
 
 export $(xargs < $PATH_TO_FOLDER/.env.discord)
 
+# USED FOR VOLUME LINK
+POOL_ADDRESS="0xC6962004f452bE9203591991D15f6b388e09E8D0"
+
 # WEBHOOK INFOS
 WEBHOOK_TOKEN="`printenv WEBHOOK_TOKEN`"
 WEBHOOK_ID="`printenv WEBHOOK_ID`"
@@ -48,6 +51,9 @@ then
   newline;
   echo -n $POOL_LINK >> .webhook.tmp;
 fi
+
+newline;
+echo -n "<https://app.uniswap.org/explore/pools/arbitrum/$POOL_ADDRESS>" >> .webhook.tmp
 
 STATUS="`pm2 ls | grep online | wc -l`"
 if [ "$STATUS" != "0" ]
