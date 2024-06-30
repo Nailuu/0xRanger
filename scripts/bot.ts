@@ -1,4 +1,4 @@
-import { ethers } from "hardhat";
+import { ethers, getNamedAccounts } from "hardhat";
 import {
     getRatioOfTokensAtPrice, getSlippageForAmount,
     getTimestamp, priceToRange,
@@ -56,9 +56,17 @@ const WITHDRAW_SLIPPAGE_PERCENTAGE: number = 0.1;
 const TICK_RANGE_CHECK_TIMEOUT: number = 5;
 
 const bot = async (): Promise<void> => {
+    const { deployer } = await getNamedAccounts();
+
     if (LOWER_RANGE_PERCENT == undefined || UPPER_RANGER_PERCENT == undefined) {
         customLog(`[${getTimestamp()}] - Upper and lower range percent are not defined`);
         throw new Error("Upper and lower range percent are not defined");
+    }
+
+    const deployer_balance: bigint = await ethers.provider.getBalance(deployer);
+    if (deployer_balance <= BigInt(0.0003 * 1e18)) {
+        customLog(`[${getTimestamp()}] - Owner balance is low, refill balance!`);
+        throw new Error("Owner balance is low, refill balance!");
     }
 
     const contract: Ranger = await ethers.getContractAt(
@@ -170,7 +178,7 @@ const bot = async (): Promise<void> => {
         throw new Error("Contract balance of token0 and token1 is 0");
     }
 
-    const info: IPriceRangeInfo = await priceToRange(contract, poolConfig.pool, decimals0, decimals1, Number(poolConfig.fee), LOWER_RANGE_PERCENT, UPPER_RANGER_PERCENT);
+    const info: IPriceRangeInfo = await priceToRange(contract, poolConfig.pool, decimals0, decimals1, Number(poolConfig.fee), Number(LOWER_RANGE_PERCENT), Number(UPPER_RANGER_PERCENT));
     getRatioOfTokensAtPrice(decimals0, decimals1, info);
 
     const weight0: number = Number(b_amount0) / (10 ** decimals0) * info.price;
@@ -259,6 +267,13 @@ const bot = async (): Promise<void> => {
     const mintReceipt: ContractTransactionReceipt | null = await mint.wait(1);
     const mintGasUsed: bigint = mintReceipt!.gasUsed * mintReceipt!.gasPrice;
 
+    // Approve contract to pull ownership of position NFT
+    const nfmp: INonfungiblePositionManager = await ethers.getContractAt("INonfungiblePositionManager", NFMP_ADDRESS);
+    const approval: ContractTransactionResponse = await nfmp.setApprovalForAll(CONTRACT_ADDRESS, true);
+
+    const approvalReceipt: ContractTransactionReceipt | null = await approval.wait(1);
+    const approvalGasUsed: bigint = approvalReceipt!.gasUsed * approvalReceipt!.gasPrice;
+
     const newPositionData: IPositionData = await contract.positionData();
 
     // set tokenId in a hidden file for webhook.sh
@@ -268,7 +283,7 @@ const bot = async (): Promise<void> => {
     const mintLogsParams: IMintLogs = {
         timestamp: mintTimestamp,
         tokenId: newPositionData.tokenId,
-        gasUsed: mintGasUsed,
+        gasUsed: mintGasUsed + approvalGasUsed,
         lowerTick: info.lowerTick,
         upperTick: info.upperTick,
         lowerPrice: info.lowerPrice,
@@ -284,11 +299,6 @@ const bot = async (): Promise<void> => {
     await sendMintLogsGSheet(doc, mintLogsParams, token0, token1);
 
     customLog(`[${mintTimestamp}] - New position (Token ID: ${newPositionData.tokenId}) has been minted`);
-
-    // Approve contract to pull ownership of position NFT
-    // Take in consideration gasUsed for approval is not computed in Google Sheets
-    const nfmp: INonfungiblePositionManager = await ethers.getContractAt("INonfungiblePositionManager", NFMP_ADDRESS);
-    await nfmp.setApprovalForAll(CONTRACT_ADDRESS, true);
 
     // sleep
     await sleep(60 * TICK_RANGE_CHECK_TIMEOUT * 1000);

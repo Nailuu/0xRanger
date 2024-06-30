@@ -1,13 +1,8 @@
 import { expect } from "chai";
 import { ethers, deployments } from "hardhat";
 import {
-    Contract,
-    TransactionReceipt,
-    ContractEvent,
     ContractTransactionResponse,
     ContractTransactionReceipt,
-    EventLog,
-    Log,
     TransactionRequest
 } from "ethers";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
@@ -15,8 +10,6 @@ import {
     POOL,
     WHALE,
     NFMP_ADDRESS,
-    getLiquidityToken0,
-    getAmountOfToken1ForLiquidity0,
     getSlippageForAmount,
     priceToRange,
     getRatioOfTokensAtPrice,
@@ -25,13 +18,9 @@ import {
 } from "../helper-hardhat-config";
 import { IPositionData } from "../types/IPositionData";
 import { IPoolConfig } from "../types/IPoolConfig";
-import { TickMath } from "@uniswap/v3-sdk";
 import { IERC20, INonfungiblePositionManager, IWETH9, Ranger } from "../typechain-types";
 import { IPriceRangeInfo } from "../types/IPriceRangeInfo";
 import { Deployment } from "hardhat-deploy/types";
-import { ISwapData } from "../types/ISwapData";
-
-const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY;
 
 const PARAMS = {
     token0amount: 5n * 10n ** 18n,
@@ -332,10 +321,10 @@ describe("Ranger", async () => {
         const swap1: number = totalWeightInY * (info.ratio1 / 100) * (10 ** decimals1);
 
         if (BigInt(Math.floor(swap0)) > b_amount0) {
-            await swapToken1ToToken0(contract, poolConfig, swap0, b_amount0, info.price, decimals0, decimals1);
+            await swapToken1ToToken0(contract, poolConfig, info, swap0, b_amount0, decimals0, decimals1);
         }
         else if (BigInt(Math.floor(swap1)) > b_amount1) {
-            await swapToken0ToToken1(contract, poolConfig, swap1, b_amount1, info.price, decimals0, decimals1);
+            await swapToken0ToToken1(contract, poolConfig, info, swap1, b_amount1, decimals0, decimals1);
         }
 
         const a_amount0: bigint = await token0.balanceOf(contractAddress);

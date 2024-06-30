@@ -561,7 +561,6 @@ export {
     POOL,
     WHALE,
     NFMP_ADDRESS,
-    WETH_ADDRESS,
     CONTRACT_ADDRESS,
     getSlippageForAmount,
     sendErrorLogsWebhook,
