@@ -149,12 +149,13 @@ const bot = async (): Promise<void> => {
                 a_amount1: a_amount1,
             };
 
+            customLog(`[${timestamp}] - Position (Token ID: ${positionData.tokenId}) has been withdrawn`);
+
             // Discord Webhook
             await sendWithdrawLogsWebhook(data, poolConfig);
             // Google Sheets API
             await sendWithdrawLogsGSheet(doc, data, token0, token1);
 
-            customLog(`[${timestamp}] - Position (Token ID: ${positionData.tokenId}) has been withdrawn`);
             break;
         }
 
@@ -245,11 +246,6 @@ const bot = async (): Promise<void> => {
         ratio1: info.ratio1,
     };
 
-    // Discord Webhook
-    await sendSwapLogsWebhook(swapLogsParams);
-    // Google Sheets API
-    await sendSwapLogsGSheet(doc, swapLogsParams, poolConfig);
-
     customLog(`[${swapData.timestamp}] - Swap executed from ${option ? "token1" : "token0"} to ${option ? "token0" : "token1"}`);
 
     const amount0ToMint: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
@@ -293,12 +289,19 @@ const bot = async (): Promise<void> => {
         amount1ToMint: amount1ToMint,
     };
 
+    // Send swap and Mint logs at the same time to reduce delay between swap and mint and reduce remaining capital after mint
+
+    customLog(`[${mintTimestamp}] - New position (Token ID: ${newPositionData.tokenId}) has been minted`);
+
+    // Discord Webhook
+    await sendSwapLogsWebhook(swapLogsParams);
+    // Google Sheets API
+    await sendSwapLogsGSheet(doc, swapLogsParams, poolConfig);
+
     // Discord Webhook
     await sendMintLogsWebhook(mintLogsParams);
     // Google Sheets API
     await sendMintLogsGSheet(doc, mintLogsParams, token0, token1);
-
-    customLog(`[${mintTimestamp}] - New position (Token ID: ${newPositionData.tokenId}) has been minted`);
 
     // sleep
     await sleep(60 * TICK_RANGE_CHECK_TIMEOUT * 1000);
