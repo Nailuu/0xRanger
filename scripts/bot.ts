@@ -123,7 +123,7 @@ const bot = async (): Promise<void> => {
 
             const amountsMin: bigint[] = getSlippageForAmount(1 - WITHDRAW_SLIPPAGE_PERCENTAGE / 100, amounts.amount0, amounts.amount1);
 
-            const withdraw: ContractTransactionResponse = contract.withdrawLiquidity(amountsMin[0], amountsMin[1]);
+            const withdraw: ContractTransactionResponse = await contract.withdrawLiquidity(amountsMin[0], amountsMin[1]);
 
             const timestamp: string = getTimestamp();
             const withdrawReceipt: ContractTransactionReceipt | null = await withdraw.wait(1);
