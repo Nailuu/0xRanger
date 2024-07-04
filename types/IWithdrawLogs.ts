@@ -1,7 +1,9 @@
 export type IWithdrawLogs = {
     timestamp: string;
     tokenId: bigint;
+    totalGasUsed: bigint;
     gasUsed: bigint;
+    gasPrice: bigint;
     tick: bigint;
     lowerTick: bigint;
     upperTick: bigint;

@@ -11,12 +11,13 @@ import { IPoolConfig } from "./types/IPoolConfig";
 import { IERC20, Ranger } from "./typechain-types";
 import { TickMath, nearestUsableTick } from "@uniswap/v3-sdk";
 import { IPriceRangeInfo } from "./types/IPriceRangeInfo";
-import { ContractTransactionReceipt, ContractTransactionResponse } from "ethers";
+import { ContractTransactionReceipt, ContractTransactionResponse, FeeData } from "ethers";
 import { ISwapData } from "./types/ISwapData";
 import JSBI from "jsbi";
 import { ISwapLogs } from "./types/ISwapLogs";
 import { IMintLogs } from "./types/IMintLogs";
 import fs from "fs-extra";
+import { ethers } from "hardhat";
 
 const POOL = {
     ETH_MAINNET: {
@@ -51,6 +52,16 @@ const DISCORD_WEBHOOK_URL_MINT: string = process.env.DISCORD_WEBHOOK_URL_MINT!;
 const DISCORD_WEBHOOK_URL_SWAP: string = process.env.DISCORD_WEBHOOK_URL_SWAP!;
 const COINGECKO_API_KEY: string = process.env.COINGECKO_API_KEY!;
 const CONTRACT_ADDRESS: string = process.env.CONTRACT_ADDRESS!;
+const MAX_GAS_PRICE: string = process.env.MAX_GAS_PRICE!;
+
+const checkGasPrice = async (): Promise<void> => {
+    const data: FeeData =  await ethers.provider.getFeeData();
+    if (data.gasPrice! >= BigInt(MAX_GAS_PRICE)) {
+        customLog(`[${getTimestamp()}] - Gas price too high (${data.gasPrice}), sleeping 5 minutes...`);
+        await sleep(5 * 60 * 1000);
+        await checkGasPrice();
+    }
+}
 
 const getTokenInfoCoinGecko = async (address: string): Promise<{ price: number; symbol: string; decimals: number }> => {
     const headers: Headers = new Headers();
@@ -193,7 +204,7 @@ const sendWithdrawLogsGSheet = async (
     const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Withdraw"];
 
     const eth_price: number = await getEthereumPriceCoinGecko();
-    const usdGasUsed: number = Number(data.gasUsed) / 1e18 * eth_price;
+    const gasUSD: number = Number(data.totalGasUsed) / 1e18 * eth_price;
 
     const cg_token0 = await getTokenInfoCoinGecko(await token0.getAddress());
     const cg_token1 = await getTokenInfoCoinGecko(await token1.getAddress());
@@ -231,8 +242,10 @@ const sendWithdrawLogsGSheet = async (
     const row: GoogleSpreadsheetRow = await sheet.addRow({
         timestamp: data.timestamp,
         tokenId: data.tokenId.toString(),
+        totalGasUsed: data.totalGasUsed.toString(),
         gasUsed: data.gasUsed.toString(),
-        usdGasUsed: usdGasUsed.toString(),
+        gasPrice: data.gasPrice.toString(),
+        gasUSD: gasUSD.toString(),
         tick: data.tick.toString(),
         lowerTick: data.lowerTick.toString(),
         upperTick: data.upperTick.toString(),
@@ -283,7 +296,8 @@ const sendMintLogsGSheet = async (doc: GoogleSpreadsheet, params: IMintLogs, tok
     const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Mint"];
 
     const eth_price: number = await getEthereumPriceCoinGecko();
-    const usdGasUsed: number = Number(params.gasUsed) / 1e18 * eth_price;
+    const gasUSDMint: number = Number(params.totalGasUsedMint) / 1e18 * eth_price;
+    const gasUSDApproval: number = Number(params.totalGasUsedApproval) / 1e18 * eth_price;
 
     const gc_token0 = await getTokenInfoCoinGecko(await token0.getAddress());
     const gc_token1 = await getTokenInfoCoinGecko(await token1.getAddress());
@@ -312,8 +326,14 @@ const sendMintLogsGSheet = async (doc: GoogleSpreadsheet, params: IMintLogs, tok
     const row: GoogleSpreadsheetRow = await sheet.addRow({
         timestamp: params.timestamp,
         tokenId: params.tokenId.toString(),
-        gasUsed: params.gasUsed.toString(),
-        usdGasUsed: usdGasUsed.toString(),
+        totalGasUsedMint: params.totalGasUsedMint.toString(),
+        gasUsedMint: params.gasPriceMint.toString(),
+        gasPriceMint: params.gasPriceMint.toString(),
+        gasUSDMint: gasUSDMint.toString(),
+        totalGasUsedApproval: params.totalGasUsedApproval.toString(),
+        gasUsedApproval: params.gasUsedApproval.toString(),
+        gasPriceApproval: params.gasPriceApproval.toString(),
+        gasUSDApproval: gasUSDApproval.toString(),
         lowerTick: params.lowerTick.toString(),
         upperTick: params.upperTick.toString(),
         amount0Mint: params.amount0ToMint.toString(),
@@ -359,7 +379,7 @@ const sendSwapLogsGSheet = async (doc: GoogleSpreadsheet, params: ISwapLogs, poo
     const sheet: GoogleSpreadsheetWorksheet = doc.sheetsByTitle["Swap"];
 
     const eth_price: number = await getEthereumPriceCoinGecko();
-    const usdGasUsed: number = Number(params.gasUsed) / 1e18 * eth_price;
+    const gasUSD: number = Number(params.totalGasUsed) / 1e18 * eth_price;
 
     const token0 = await getTokenInfoCoinGecko(poolConfig.token0);
     const token1 = await getTokenInfoCoinGecko(poolConfig.token1);
@@ -383,8 +403,10 @@ const sendSwapLogsGSheet = async (doc: GoogleSpreadsheet, params: ISwapLogs, poo
 
     const row: GoogleSpreadsheetRow = await sheet.addRow({
         timestamp: params.timestamp,
+        totalGasUsed: params.totalGasUsed.toString(),
         gasUsed: params.gasUsed.toString(),
-        usdGasUsed: usdGasUsed.toString(),
+        gasPrice: params.gasPrice.toString(),
+        gasUSD: gasUSD.toString(),
         "0to1": !params.option,
         "1to0": params.option,
         b_amount0: params.b_amount0.toString(),
@@ -535,9 +557,9 @@ const swapToken1ToToken0 = async (contract: Ranger, poolConfig: IPoolConfig, inf
     const swap: ContractTransactionResponse = await contract.swap(poolConfig.token1, poolConfig.token0, amountIn, amountOutMinimum);
     const timestamp: string = getTimestamp();
     const swapReceipt: ContractTransactionReceipt | null = await swap.wait(1);
-    const gasUsed: bigint = swapReceipt!.gasUsed * swapReceipt!.gasPrice;
+    const totalGasUsed: bigint = swapReceipt!.gasUsed * swapReceipt!.gasPrice;
 
-    return { timestamp, amountIn, gasUsed };
+    return { timestamp, amountIn, totalGasUsed, gasPrice: swapReceipt!.gasPrice, gasUsed: swapReceipt!.gasUsed };
 };
 
 const swapToken0ToToken1 = async (contract: Ranger, poolConfig: IPoolConfig, info: IPriceRangeInfo, swap1: number, balance1: bigint, decimals0: number, decimals1: number): Promise<ISwapData> => {
@@ -547,9 +569,9 @@ const swapToken0ToToken1 = async (contract: Ranger, poolConfig: IPoolConfig, inf
     const swap: ContractTransactionResponse = await contract.swap(poolConfig.token0, poolConfig.token1, amountIn, amountOutMinimum);
     const timestamp: string = getTimestamp();
     const swapReceipt: ContractTransactionReceipt | null = await swap.wait(1);
-    const gasUsed: bigint = swapReceipt!.gasUsed * swapReceipt!.gasPrice;
+    const totalGasUsed: bigint = swapReceipt!.gasUsed * swapReceipt!.gasPrice;
 
-    return { timestamp, amountIn, gasUsed };
+    return { timestamp, amountIn, totalGasUsed, gasPrice: swapReceipt!.gasPrice, gasUsed: swapReceipt!.gasUsed };
 };
 
 const customLog = (msg: string): void => {
@@ -584,5 +606,6 @@ export {
     swapToken1ToToken0,
     swapToken0ToToken1,
     customLog,
-    getEthereumPriceCoinGecko
+    getEthereumPriceCoinGecko,
+    checkGasPrice
 };

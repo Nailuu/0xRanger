@@ -1,5 +1,7 @@
 export type ISwapLogs = {
     timestamp: string;
+    totalGasUsed: bigint;
+    gasPrice: bigint;
     gasUsed: bigint;
     token0: string;
     token1: string;

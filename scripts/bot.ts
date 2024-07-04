@@ -5,7 +5,7 @@ import {
     sendErrorLogsWebhook, sendMintLogsGSheet, sendMintLogsWebhook, sendSwapLogsGSheet, sendSwapLogsWebhook,
     sendWithdrawLogsGSheet,
     sendWithdrawLogsWebhook,
-    sleep, swapToken0ToToken1, swapToken1ToToken0, NFMP_ADDRESS, POOL, customLog, CONTRACT_ADDRESS,
+    sleep, swapToken0ToToken1, swapToken1ToToken0, NFMP_ADDRESS, POOL, customLog, CONTRACT_ADDRESS, checkGasPrice,
 } from "../helper-hardhat-config";
 import { IPoolConfig } from "../types/IPoolConfig";
 import {
@@ -108,6 +108,9 @@ const bot = async (): Promise<void> => {
         ) {
             customLog(`[${getTimestamp()}] - Position out of range, withdrawing liquidity!`);
 
+            // Check if gas price is not too high, otherwise sleep 5 minutes and check until gas price is lower then .env.MAX_GAS_PRICE
+            await checkGasPrice();
+
             const b_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
             const b_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
 
@@ -120,12 +123,11 @@ const bot = async (): Promise<void> => {
 
             const amountsMin: bigint[] = getSlippageForAmount(1 - WITHDRAW_SLIPPAGE_PERCENTAGE / 100, amounts.amount0, amounts.amount1);
 
-            // withdraw liquidity and collect fees
-            const withdraw: ContractTransactionResponse = await contract.withdrawLiquidity(amountsMin[0], amountsMin[1]);
+            const withdraw: ContractTransactionResponse = contract.withdrawLiquidity(amountsMin[0], amountsMin[1]);
 
             const timestamp: string = getTimestamp();
             const withdrawReceipt: ContractTransactionReceipt | null = await withdraw.wait(1);
-            const withdrawGasUsed: bigint = withdrawReceipt!.gasUsed * withdrawReceipt!.gasPrice;
+            const withdrawTotalGasUsed: bigint = withdrawReceipt!.gasUsed * withdrawReceipt!.gasPrice;
 
             const withdrawResult: IWithdrawResult = await contract.withdrawResult();
 
@@ -135,7 +137,9 @@ const bot = async (): Promise<void> => {
             const data: IWithdrawLogs = {
                 timestamp: timestamp,
                 tokenId: positionData.tokenId,
-                gasUsed: withdrawGasUsed,
+                totalGasUsed: withdrawTotalGasUsed,
+                gasUsed: withdrawReceipt!.gasUsed,
+                gasPrice: withdrawReceipt!.gasPrice,
                 tick: slot0.tick,
                 lowerTick: positionData.tickLower,
                 upperTick: positionData.tickUpper,
@@ -179,6 +183,9 @@ const bot = async (): Promise<void> => {
         throw new Error("Contract balance of token0 and token1 is 0");
     }
 
+    // Check if gas price is not too high, otherwise sleep 5 minutes and check until gas price is lower then .env.MAX_GAS_PRICE
+    await checkGasPrice();
+
     const info: IPriceRangeInfo = await priceToRange(contract, poolConfig.pool, decimals0, decimals1, Number(poolConfig.fee), Number(LOWER_RANGE_PERCENT), Number(UPPER_RANGER_PERCENT));
     getRatioOfTokensAtPrice(decimals0, decimals1, info);
 
@@ -213,6 +220,8 @@ const bot = async (): Promise<void> => {
         swapData = {
             timestamp: getTimestamp(),
             amountIn: 0n,
+            totalGasUsed: 0n,
+            gasPrice: 0n,
             gasUsed: 0n,
         };
     }
@@ -222,6 +231,8 @@ const bot = async (): Promise<void> => {
 
     const swapLogsParams: ISwapLogs = {
         timestamp: swapData.timestamp,
+        totalGasUsed: swapData.totalGasUsed,
+        gasPrice: swapData.gasPrice,
         gasUsed: swapData.gasUsed,
         token0: poolConfig.token0,
         token1: poolConfig.token1,
@@ -261,14 +272,14 @@ const bot = async (): Promise<void> => {
     
     const mintTimestamp: string = getTimestamp();
     const mintReceipt: ContractTransactionReceipt | null = await mint.wait(1);
-    const mintGasUsed: bigint = mintReceipt!.gasUsed * mintReceipt!.gasPrice;
+    const mintTotalGasUsed: bigint = mintReceipt!.gasUsed * mintReceipt!.gasPrice;
 
     // Approve contract to pull ownership of position NFT
     const nfmp: INonfungiblePositionManager = await ethers.getContractAt("INonfungiblePositionManager", NFMP_ADDRESS);
     const approval: ContractTransactionResponse = await nfmp.setApprovalForAll(CONTRACT_ADDRESS, true);
 
     const approvalReceipt: ContractTransactionReceipt | null = await approval.wait(1);
-    const approvalGasUsed: bigint = approvalReceipt!.gasUsed * approvalReceipt!.gasPrice;
+    const approvalTotalGasUsed: bigint = approvalReceipt!.gasUsed * approvalReceipt!.gasPrice;
 
     const newPositionData: IPositionData = await contract.positionData();
 
@@ -279,7 +290,12 @@ const bot = async (): Promise<void> => {
     const mintLogsParams: IMintLogs = {
         timestamp: mintTimestamp,
         tokenId: newPositionData.tokenId,
-        gasUsed: mintGasUsed + approvalGasUsed,
+        totalGasUsedMint: mintTotalGasUsed,
+        gasPriceMint: mintReceipt!.gasPrice,
+        gasUsedMint: mintReceipt!.gasUsed,
+        totalGasUsedApproval: approvalTotalGasUsed,
+        gasPriceApproval: approvalReceipt!.gasPrice,
+        gasUsedApproval: approvalReceipt!.gasUsed,
         lowerTick: info.lowerTick,
         upperTick: info.upperTick,
         lowerPrice: info.lowerPrice,
@@ -290,7 +306,6 @@ const bot = async (): Promise<void> => {
     };
 
     // Send swap and Mint logs at the same time to reduce delay between swap and mint and reduce remaining capital after mint
-
     customLog(`[${mintTimestamp}] - New position (Token ID: ${newPositionData.tokenId}) has been minted`);
 
     // Discord Webhook
