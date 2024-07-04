@@ -54,11 +54,13 @@ const COINGECKO_API_KEY: string = process.env.COINGECKO_API_KEY!;
 const CONTRACT_ADDRESS: string = process.env.CONTRACT_ADDRESS!;
 const MAX_GAS_PRICE: string = process.env.MAX_GAS_PRICE!;
 
+const GAS_PRICE_CHECK_TIMEOUT: number = 1;
+
 const checkGasPrice = async (): Promise<void> => {
     const data: FeeData =  await ethers.provider.getFeeData();
     if (data.gasPrice! >= BigInt(MAX_GAS_PRICE)) {
-        customLog(`[${getTimestamp()}] - Gas price too high (${data.gasPrice}), sleeping 5 minutes...`);
-        await sleep(5 * 60 * 1000);
+        customLog(`[${getTimestamp()}] - Gas price too high (${data.gasPrice}), sleeping ${GAS_PRICE_CHECK_TIMEOUT} minutes...`);
+        await sleep(GAS_PRICE_CHECK_TIMEOUT * 60 * 1000);
         await checkGasPrice();
     }
 }
