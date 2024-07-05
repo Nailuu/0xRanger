@@ -246,6 +246,7 @@ const sendWithdrawLogsGSheet = async (
 
     const row: GoogleSpreadsheetRow = await sheet.addRow({
         timestamp: data.timestamp,
+        ethPrice: eth_price.toString(),
         tokenId: data.tokenId.toString(),
         totalGasUsed: data.totalGasUsed.toString(),
         gasUsed: data.gasUsed.toString(),
@@ -330,6 +331,7 @@ const sendMintLogsGSheet = async (doc: GoogleSpreadsheet, params: IMintLogs, tok
 
     const row: GoogleSpreadsheetRow = await sheet.addRow({
         timestamp: params.timestamp,
+        ethPrice: eth_price.toString(),
         tokenId: params.tokenId.toString(),
         totalGasUsedMint: params.totalGasUsedMint.toString(),
         gasUsedMint: params.gasPriceMint.toString(),
@@ -408,6 +410,7 @@ const sendSwapLogsGSheet = async (doc: GoogleSpreadsheet, params: ISwapLogs, poo
 
     const row: GoogleSpreadsheetRow = await sheet.addRow({
         timestamp: params.timestamp,
+        ethPrice: eth_price.toString(),
         totalGasUsed: params.totalGasUsed.toString(),
         gasUsed: params.gasUsed.toString(),
         gasPrice: params.gasPrice.toString(),
