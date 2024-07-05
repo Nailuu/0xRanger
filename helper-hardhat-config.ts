@@ -59,7 +59,7 @@ const GAS_PRICE_CHECK_TIMEOUT: number = 1;
 const checkGasPrice = async (): Promise<void> => {
     const data: FeeData =  await ethers.provider.getFeeData();
     if (data.gasPrice! >= BigInt(MAX_GAS_PRICE)) {
-        customLog(`[${getTimestamp()}] - Gas price too high (${data.gasPrice}), sleeping ${GAS_PRICE_CHECK_TIMEOUT} minutes...`);
+        customLog(`[${getTimestamp()}] - Gas price too high (${data.gasPrice} Wei - ${Number(data.gasPrice) / 1e9} Gwei - Limit: ${Number(MAX_GAS_PRICE) / 1e9} Gwei), sleeping ${GAS_PRICE_CHECK_TIMEOUT} minutes...`);
         await sleep(GAS_PRICE_CHECK_TIMEOUT * 60 * 1000);
         await checkGasPrice();
     }
