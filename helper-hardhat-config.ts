@@ -147,7 +147,7 @@ const sendErrorLogsWebhook = async (
     const header: string = "### " + functionName + "\n";
     const title: string = error.message + "\n";
     const errorStack: string = "```fix\n" + error.stack + "```";
-    const tag: string = "\n<@&1246532969594748948>";
+    const tag: string = "\n<@&1258587489367494689>";
 
     await webhookClient.send({
         content: header + title + errorStack + tag,
