@@ -52,11 +52,14 @@ const DISCORD_WEBHOOK_URL_MINT: string = process.env.DISCORD_WEBHOOK_URL_MINT!;
 const DISCORD_WEBHOOK_URL_SWAP: string = process.env.DISCORD_WEBHOOK_URL_SWAP!;
 const COINGECKO_API_KEY: string = process.env.COINGECKO_API_KEY!;
 const CONTRACT_ADDRESS: string = process.env.CONTRACT_ADDRESS!;
-const MAX_GAS_PRICE: string = process.env.MAX_GAS_PRICE!;
-
-const GAS_PRICE_CHECK_TIMEOUT: number = 1;
+const MAX_GAS_PRICE: string | undefined = process.env.MAX_GAS_PRICE;
+const GAS_PRICE_CHECK_TIMEOUT: string | undefined = process.env.GAS_PRICE_CHECK_TIMEOUT;
 
 const checkGasPrice = async (): Promise<void> => {
+    if (GAS_PRICE_CHECK_TIMEOUT == undefined || MAX_GAS_PRICE == undefined) {
+        throw new Error("GAS_PRICE_CHECK_TIMEOUT and MAX_GAS_PRICE are required");
+    }
+
     const data: FeeData =  await ethers.provider.getFeeData();
     if (data.gasPrice! >= BigInt(MAX_GAS_PRICE)) {
         customLog(`[${getTimestamp()}] - Gas price too high (${data.gasPrice} Wei - ${Number(data.gasPrice) / 1e9} Gwei - Limit: ${Number(MAX_GAS_PRICE) / 1e9} Gwei), sleeping ${GAS_PRICE_CHECK_TIMEOUT} minutes...`);
