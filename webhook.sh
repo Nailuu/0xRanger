@@ -9,6 +9,20 @@ export $(xargs < $PATH_TO_FOLDER/.env.discord)
 # USED FOR VOLUME LINK
 POOL_ADDRESS="0xC6962004f452bE9203591991D15f6b388e09E8D0"
 
+ETH_GAS_PRICE_URL=https://arb-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY
+ETH_GAS_PRICE_RESULT="`curl --request POST \
+                     --url $ETH_GAS_PRICE_URL \
+                     --header 'accept: application/json' \
+                     --header 'content-type: application/json' \
+                     --data '{"id": 1,"jsonrpc": "2.0","method": "eth_gasPrice"}' \
+                     | jq -r '.result'`"
+
+
+ETH_GAS_PRICE_WEI="`echo $[$ETH_GAS_PRICE_RESULT]`"
+
+# pip install numpy
+ETH_GAS_PRICE_GWEI="`python3 gwei.py $ETH_GAS_PRICE_WEI`"
+
 # WEBHOOK INFOS
 WEBHOOK_TOKEN="`printenv WEBHOOK_TOKEN`"
 WEBHOOK_ID="`printenv WEBHOOK_ID`"
@@ -44,6 +58,12 @@ discord_dev;
 echo -n $DATE_TIME >> .webhook.tmp;
 echo -n " - " >> .webhook.tmp;
 echo -n $STATUS >> .webhook.tmp;
+discord_dev;
+
+discord_dev;
+echo -n "⛽ Gas Price Tracker: " >> .webhook.tmp;
+echo -n $ETH_GAS_PRICE_GWEI >> .webhook.tmp
+echo -n " Gwei" >> .webhook.tmp
 discord_dev;
 
 if [ "$TOKEN_ID" != "" ]
