@@ -54,6 +54,7 @@ const COINGECKO_API_KEY: string = process.env.COINGECKO_API_KEY!;
 const CONTRACT_ADDRESS: string = process.env.CONTRACT_ADDRESS!;
 const MAX_GAS_PRICE: string | undefined = process.env.MAX_GAS_PRICE;
 const GAS_PRICE_CHECK_TIMEOUT: string | undefined = process.env.GAS_PRICE_CHECK_TIMEOUT;
+const SWAP_SLIPPAGE_PERCENT: string | undefined = process.env.SWAP_SLIPPAGE_PERCENT;
 
 const checkGasPrice = async (): Promise<void> => {
     if (GAS_PRICE_CHECK_TIMEOUT == undefined || MAX_GAS_PRICE == undefined) {
@@ -559,8 +560,12 @@ const getRatioOfTokensAtPrice = (decimals0: number, decimals1: number, params: I
 };
 
 const swapToken1ToToken0 = async (contract: Ranger, poolConfig: IPoolConfig, info: IPriceRangeInfo, swap0: number, balance0: bigint, decimals0: number, decimals1: number): Promise<ISwapData> => {
+    if (SWAP_SLIPPAGE_PERCENT == undefined) {
+        throw new Error("Swap slippage percentage is undefined");
+    }
+
     const amountIn: bigint = BigInt(Math.floor(((swap0 - Number(balance0)) / (10 ** decimals0) * info.price) * (10 ** decimals1)));
-    const amountOutMinimum: bigint = BigInt(Math.floor((swap0 - Number(balance0)) * (1 - (0.5 / 100))));
+    const amountOutMinimum: bigint = BigInt(Math.floor((swap0 - Number(balance0)) * (1 - (Number(SWAP_SLIPPAGE_PERCENT) / 100))));
 
     const swap: ContractTransactionResponse = await contract.swap(poolConfig.token1, poolConfig.token0, amountIn, amountOutMinimum);
     const timestamp: string = getTimestamp();
@@ -571,8 +576,12 @@ const swapToken1ToToken0 = async (contract: Ranger, poolConfig: IPoolConfig, inf
 };
 
 const swapToken0ToToken1 = async (contract: Ranger, poolConfig: IPoolConfig, info: IPriceRangeInfo, swap1: number, balance1: bigint, decimals0: number, decimals1: number): Promise<ISwapData> => {
+    if (SWAP_SLIPPAGE_PERCENT == undefined) {
+        throw new Error("Swap slippage percentage is undefined");
+    }
+
     const amountIn: bigint = BigInt(Math.floor((swap1 - Number(balance1)) / (10 ** decimals1) / info.price * (10 ** decimals0)));
-    const amountOutMinimum: bigint = BigInt(Math.floor((swap1 - Number(balance1)) * (1 - (0.5 / 100))));
+    const amountOutMinimum: bigint = BigInt(Math.floor((swap1 - Number(balance1)) * (1 - (Number(SWAP_SLIPPAGE_PERCENT) / 100))));
 
     const swap: ContractTransactionResponse = await contract.swap(poolConfig.token0, poolConfig.token1, amountIn, amountOutMinimum);
     const timestamp: string = getTimestamp();
