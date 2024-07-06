@@ -21,7 +21,7 @@ ETH_GAS_PRICE_RESULT="`curl --request POST \
 ETH_GAS_PRICE_WEI="`echo $[$ETH_GAS_PRICE_RESULT]`"
 
 # pip install numpy
-ETH_GAS_PRICE_GWEI="`python3 gwei.py $ETH_GAS_PRICE_WEI`"
+ETH_GAS_PRICE_GWEI="`python3 $PATH_TO_FOLDER/gwei.py $ETH_GAS_PRICE_WEI`"
 
 # WEBHOOK INFOS
 WEBHOOK_TOKEN="`printenv WEBHOOK_TOKEN`"
