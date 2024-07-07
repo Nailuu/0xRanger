@@ -18,7 +18,6 @@ import { ISwapLogs } from "./types/ISwapLogs";
 import { IMintLogs } from "./types/IMintLogs";
 import fs from "fs-extra";
 import { ethers } from "hardhat";
-import { checkValidAddress } from "@uniswap/sdk-core/dist/utils/validateAndParseAddress";
 
 const POOL = {
     ETH_MAINNET: {
@@ -70,9 +69,6 @@ const checkProcessEnvConstants = (): void => {
     if (CONTRACT_ADDRESS == undefined) {
         throw new Error("CONTRACT_ADDRESS is not defined");
     }
-
-    // check if CONTRACT_ADDRESS is a valid hex ethereum address
-    checkValidAddress(CONTRACT_ADDRESS);
 
     if (GAS_PRICE_CHECK_TIMEOUT == undefined || MAX_GAS_PRICE == undefined) {
         throw new Error("GAS_PRICE_CHECK_TIMEOUT and MAX_GAS_PRICE are not defined");
