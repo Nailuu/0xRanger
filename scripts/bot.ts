@@ -1,11 +1,25 @@
 import { ethers, getNamedAccounts } from "hardhat";
 import {
-    getRatioOfTokensAtPrice, getSlippageForAmount,
-    getTimestamp, priceToRange,
-    sendErrorLogsWebhook, sendMintLogsGSheet, sendMintLogsWebhook, sendSwapLogsGSheet, sendSwapLogsWebhook,
+    getRatioOfTokensAtPrice,
+    getSlippageForAmount,
+    getTimestamp,
+    priceToRange,
+    sendErrorLogsWebhook,
+    sendMintLogsGSheet,
+    sendMintLogsWebhook,
+    sendSwapLogsGSheet,
+    sendSwapLogsWebhook,
     sendWithdrawLogsGSheet,
     sendWithdrawLogsWebhook,
-    sleep, swapToken0ToToken1, swapToken1ToToken0, NFMP_ADDRESS, POOL, customLog, CONTRACT_ADDRESS, checkGasPrice,
+    sleep,
+    swapToken0ToToken1,
+    swapToken1ToToken0,
+    NFMP_ADDRESS,
+    POOL,
+    customLog,
+    CONTRACT_ADDRESS,
+    checkGasPrice,
+    checkProtocolFee, checkProcessEnvConstants,
 } from "../helper-hardhat-config";
 import { IPoolConfig } from "../types/IPoolConfig";
 import {
@@ -33,45 +47,48 @@ import fs from "fs-extra";
 import { GoogleSpreadsheet } from "google-spreadsheet";
 import { JWT } from "google-auth-library";
 
-const GOOGLE_CLIENT_EMAIL: string = process.env.GOOGLE_CLIENT_EMAIL!;
+const GOOGLE_CLIENT_EMAIL: string | undefined = process.env.GOOGLE_CLIENT_EMAIL!;
+const SPREADSHEET_ID: string | undefined = process.env.SPREADSHEET_ID!;
+let GOOGLE_PRIVATE_KEY: string | undefined = process.env.GOOGLE_PRIVATE_KEY
+
+if (GOOGLE_CLIENT_EMAIL == undefined || GOOGLE_PRIVATE_KEY == undefined) {
+    throw new Error("GOOGLE_CLIENT_EMAIL/GOOGLE_PRIVATE_KEY are not defined");
+}
+
 // replace \n character to real newline otherwise throw error
-const GOOGLE_PRIVATE_KEY: string = process.env
-    .GOOGLE_PRIVATE_KEY!.split(String.raw`\n`)
-    .join("\n");
-const SPREADSHEET_ID: string = process.env.SPREADSHEET_ID!;
+GOOGLE_PRIVATE_KEY = GOOGLE_PRIVATE_KEY!.split(String.raw`\n`).join("\n");
 
 const jwt: JWT = new JWT({
-    email: GOOGLE_CLIENT_EMAIL,
-    key: GOOGLE_PRIVATE_KEY,
+    email: GOOGLE_CLIENT_EMAIL!,
+    key: GOOGLE_PRIVATE_KEY!,
     scopes: "https://www.googleapis.com/auth/spreadsheets",
 });
 
-const doc: GoogleSpreadsheet = new GoogleSpreadsheet(SPREADSHEET_ID, jwt);
+const doc: GoogleSpreadsheet = new GoogleSpreadsheet(SPREADSHEET_ID!, jwt);
 
 const LOWER_RANGE_PERCENT: string | undefined = process.env.LOWER_RANGE_PERCENT;
 const UPPER_RANGER_PERCENT: string | undefined = process.env.UPPER_RANGE_PERCENT;
 const WITHDRAW_SLIPPAGE_PERCENTAGE: number = 0.1;
-
-// minutes
 const TICK_RANGE_CHECK_TIMEOUT: number = 5;
 
 const bot = async (): Promise<void> => {
     const { deployer } = await getNamedAccounts();
 
     if (LOWER_RANGE_PERCENT == undefined || UPPER_RANGER_PERCENT == undefined) {
-        customLog(`[${getTimestamp()}] - Upper and lower range percent are not defined`);
-        throw new Error("Upper and lower range percent are not defined");
+        throw new Error("LOWER_RANGE_PERCENT/UPPER_RANGER_PERCENT are not defined");
     }
 
     const deployer_balance: bigint = await ethers.provider.getBalance(deployer);
     if (deployer_balance <= BigInt(0.0003 * 1e18)) {
-        customLog(`[${getTimestamp()}] - Owner balance is low, refill balance!`);
         throw new Error("Owner balance is low, refill balance!");
     }
 
+    // Verify that every constant imported from .env are defined
+    checkProcessEnvConstants();
+
     const contract: Ranger = await ethers.getContractAt(
         "Ranger",
-        CONTRACT_ADDRESS,
+        CONTRACT_ADDRESS!,
     );
 
     const poolConfig: IPoolConfig = await contract.poolConfig();
@@ -111,8 +128,8 @@ const bot = async (): Promise<void> => {
             // Check if gas price is not too high, otherwise sleep 5 minutes and check until gas price is lower then .env.MAX_GAS_PRICE
             await checkGasPrice();
 
-            const b_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
-            const b_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
+            const b_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS!);
+            const b_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS!);
 
             const amounts: IAmounts = await contract.getAmountsForPosition(
                 poolConfig.pool,
@@ -131,8 +148,8 @@ const bot = async (): Promise<void> => {
 
             const withdrawResult: IWithdrawResult = await contract.withdrawResult();
 
-            const a_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
-            const a_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
+            const a_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS!);
+            const a_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS!);
 
             const data: IWithdrawLogs = {
                 timestamp: timestamp,
@@ -169,15 +186,15 @@ const bot = async (): Promise<void> => {
     }
 
     // wrap ETH if balance of ETH > 0 to get WETH
-    const balanceETH: bigint = await ethers.provider.getBalance(CONTRACT_ADDRESS);
+    const balanceETH: bigint = await ethers.provider.getBalance(CONTRACT_ADDRESS!);
     if (balanceETH > 0n && (poolConfig.token0 == POOL.ARBITRUM.WETH || poolConfig.token1 == POOL.ARBITRUM.WETH)) {
         // Take in consideration gasUsed for approval is not computed in Google Sheets
         customLog(`[${getTimestamp()}] - Wrapping ETH`);
         await contract.wrap();
     }
 
-    const b_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
-    const b_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
+    const b_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS!);
+    const b_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS!);
 
     if (b_amount0 == 0n && b_amount1 == 0n) {
         throw new Error("Contract balance of token0 and token1 is 0");
@@ -205,6 +222,9 @@ const bot = async (): Promise<void> => {
     let swapData: ISwapData | Record<string, never> = {};
     let option: boolean = false;
 
+    // Check if protocol fees was activated, if yes stop the bot because it could be a wallet hijack...
+    await checkProtocolFee(pool);
+
     // swap token1 to token0
     if (BigInt(Math.floor(swap0)) > b_amount0) {
         swapData = await swapToken1ToToken0(contract, poolConfig, info, swap0, b_amount0, decimals0, decimals1);
@@ -226,8 +246,8 @@ const bot = async (): Promise<void> => {
         };
     }
 
-    const a_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
-    const a_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
+    const a_amount0: bigint = await token0.balanceOf(CONTRACT_ADDRESS!);
+    const a_amount1: bigint = await token1.balanceOf(CONTRACT_ADDRESS!);
 
     const swapLogsParams: ISwapLogs = {
         timestamp: swapData.timestamp,
@@ -264,8 +284,8 @@ const bot = async (): Promise<void> => {
     // Google Sheets API
     await sendSwapLogsGSheet(doc, swapLogsParams, poolConfig);
 
-    const amount0ToMint: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
-    const amount1ToMint: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
+    const amount0ToMint: bigint = await token0.balanceOf(CONTRACT_ADDRESS!);
+    const amount1ToMint: bigint = await token1.balanceOf(CONTRACT_ADDRESS!);
     
     // mint new position
     const mint: ContractTransactionResponse = await contract.mintNewPosition(
@@ -281,7 +301,7 @@ const bot = async (): Promise<void> => {
 
     // Approve contract to pull ownership of position NFT
     const nfmp: INonfungiblePositionManager = await ethers.getContractAt("INonfungiblePositionManager", NFMP_ADDRESS);
-    const approval: ContractTransactionResponse = await nfmp.setApprovalForAll(CONTRACT_ADDRESS, true);
+    const approval: ContractTransactionResponse = await nfmp.setApprovalForAll(CONTRACT_ADDRESS!, true);
 
     const approvalReceipt: ContractTransactionReceipt | null = await approval.wait(1);
     const approvalTotalGasUsed: bigint = approvalReceipt!.gasUsed * approvalReceipt!.gasPrice;

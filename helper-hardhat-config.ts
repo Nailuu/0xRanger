@@ -8,7 +8,7 @@ import {
 } from "google-spreadsheet";
 import { IWithdrawLogs } from "./types/IWithdrawLogs";
 import { IPoolConfig } from "./types/IPoolConfig";
-import { IERC20, Ranger } from "./typechain-types";
+import { IERC20, IUniswapV3Pool, Ranger } from "./typechain-types";
 import { TickMath, nearestUsableTick } from "@uniswap/v3-sdk";
 import { IPriceRangeInfo } from "./types/IPriceRangeInfo";
 import { ContractTransactionReceipt, ContractTransactionResponse, FeeData } from "ethers";
@@ -18,6 +18,7 @@ import { ISwapLogs } from "./types/ISwapLogs";
 import { IMintLogs } from "./types/IMintLogs";
 import fs from "fs-extra";
 import { ethers } from "hardhat";
+import { checkValidAddress } from "@uniswap/sdk-core/dist/utils/validateAndParseAddress";
 
 const POOL = {
     ETH_MAINNET: {
@@ -44,27 +45,49 @@ const WHALE = {
     },
 };
 
-const NFMP_ADDRESS: string = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88";
-
-const DISCORD_WEBHOOK_URL_ERROR: string = process.env.DISCORD_WEBHOOK_URL_ERROR!;
-const DISCORD_WEBHOOK_URL_WITHDRAW: string = process.env.DISCORD_WEBHOOK_URL_WITHDRAW!;
-const DISCORD_WEBHOOK_URL_MINT: string = process.env.DISCORD_WEBHOOK_URL_MINT!;
-const DISCORD_WEBHOOK_URL_SWAP: string = process.env.DISCORD_WEBHOOK_URL_SWAP!;
-const COINGECKO_API_KEY: string = process.env.COINGECKO_API_KEY!;
-const CONTRACT_ADDRESS: string = process.env.CONTRACT_ADDRESS!;
+const DISCORD_WEBHOOK_URL_ERROR: string | undefined = process.env.DISCORD_WEBHOOK_URL_ERROR;
+const DISCORD_WEBHOOK_URL_WITHDRAW: string | undefined = process.env.DISCORD_WEBHOOK_URL_WITHDRAW;
+const DISCORD_WEBHOOK_URL_MINT: string | undefined = process.env.DISCORD_WEBHOOK_URL_MINT;
+const DISCORD_WEBHOOK_URL_SWAP: string | undefined = process.env.DISCORD_WEBHOOK_URL_SWAP;
+const COINGECKO_API_KEY: string | undefined = process.env.COINGECKO_API_KEY;
+const CONTRACT_ADDRESS: string | undefined = process.env.CONTRACT_ADDRESS;
 const MAX_GAS_PRICE: string | undefined = process.env.MAX_GAS_PRICE;
 const GAS_PRICE_CHECK_TIMEOUT: string | undefined = process.env.GAS_PRICE_CHECK_TIMEOUT;
 const SWAP_SLIPPAGE_PERCENT: string | undefined = process.env.SWAP_SLIPPAGE_PERCENT;
 
-const checkGasPrice = async (): Promise<void> => {
-    if (GAS_PRICE_CHECK_TIMEOUT == undefined || MAX_GAS_PRICE == undefined) {
-        throw new Error("GAS_PRICE_CHECK_TIMEOUT and MAX_GAS_PRICE are required");
+const NFMP_ADDRESS: string = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88";
+
+const checkProcessEnvConstants = (): void => {
+    if (DISCORD_WEBHOOK_URL_ERROR == undefined || DISCORD_WEBHOOK_URL_WITHDRAW == undefined
+        || DISCORD_WEBHOOK_URL_MINT == undefined || DISCORD_WEBHOOK_URL_SWAP == undefined) {
+        throw new Error("One or more DISCORD_WEBHOOK_URL_??? are not defined");
     }
 
+    if (COINGECKO_API_KEY == undefined) {
+        throw new Error("COINGECKO_API_KEY is not defined");
+    }
+
+    if (CONTRACT_ADDRESS == undefined) {
+        throw new Error("CONTRACT_ADDRESS is not defined");
+    }
+
+    // check if CONTRACT_ADDRESS is a valid hex ethereum address
+    checkValidAddress(CONTRACT_ADDRESS);
+
+    if (GAS_PRICE_CHECK_TIMEOUT == undefined || MAX_GAS_PRICE == undefined) {
+        throw new Error("GAS_PRICE_CHECK_TIMEOUT and MAX_GAS_PRICE are not defined");
+    }
+
+    if (SWAP_SLIPPAGE_PERCENT == undefined) {
+        throw new Error("SWAP_SLIPPAGE_PERCENT is not defined")
+    }
+}
+
+const checkGasPrice = async (): Promise<void> => {
     const data: FeeData =  await ethers.provider.getFeeData();
-    if (data.gasPrice! >= BigInt(MAX_GAS_PRICE)) {
+    if (data.gasPrice! >= BigInt(MAX_GAS_PRICE!)) {
         customLog(`[${getTimestamp()}] - Gas price too high (${data.gasPrice} Wei - ${Number(data.gasPrice) / 1e9} Gwei - Limit: ${Number(MAX_GAS_PRICE) / 1e9} Gwei), sleeping ${GAS_PRICE_CHECK_TIMEOUT} minutes...`);
-        await sleep(GAS_PRICE_CHECK_TIMEOUT * 60 * 1000);
+        await sleep(Number(GAS_PRICE_CHECK_TIMEOUT!) * 60 * 1000);
         await checkGasPrice();
     }
 }
@@ -72,7 +95,7 @@ const checkGasPrice = async (): Promise<void> => {
 const getTokenInfoCoinGecko = async (address: string): Promise<{ price: number; symbol: string; decimals: number }> => {
     const headers: Headers = new Headers();
 
-    headers.set("X-CG_DEMO_API_KEY", COINGECKO_API_KEY);
+    headers.set("X-CG_DEMO_API_KEY", COINGECKO_API_KEY!);
     headers.set("accept", "application/json");
 
     const request: RequestInfo = new Request(
@@ -102,7 +125,7 @@ const getTokenInfoCoinGecko = async (address: string): Promise<{ price: number; 
 const getEthereumPriceCoinGecko = async (): Promise<number> => {
     const headers: Headers = new Headers();
 
-    headers.set("X-CG_DEMO_API_KEY", COINGECKO_API_KEY);
+    headers.set("X-CG_DEMO_API_KEY", COINGECKO_API_KEY!);
     headers.set("accept", "application/json");
 
     const request: RequestInfo = new Request(
@@ -142,7 +165,7 @@ const sendErrorLogsWebhook = async (
     error: Error,
 ): Promise<void> => {
     const webhookClient: WebhookClient = new WebhookClient({
-        url: DISCORD_WEBHOOK_URL_ERROR,
+        url: DISCORD_WEBHOOK_URL_ERROR!,
     });
 
     const header: string = "### " + functionName + "\n";
@@ -157,7 +180,7 @@ const sendErrorLogsWebhook = async (
 
 const sendWithdrawLogsWebhook = async (data: IWithdrawLogs, poolConfig: IPoolConfig): Promise<void> => {
     const webhookClient: WebhookClient = new WebhookClient({
-        url: DISCORD_WEBHOOK_URL_WITHDRAW,
+        url: DISCORD_WEBHOOK_URL_WITHDRAW!,
     });
 
     const token0 = await getTokenInfoCoinGecko(poolConfig.token0);
@@ -233,8 +256,8 @@ const sendWithdrawLogsGSheet = async (
         cg_token1.price
     ).toFixed(4);
 
-    const balance0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
-    const balance1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
+    const balance0: bigint = await token0.balanceOf(CONTRACT_ADDRESS!);
+    const balance1: bigint = await token1.balanceOf(CONTRACT_ADDRESS!);
 
     const usd_balance0 = (
         (Number(balance0) / 10 ** cg_token0.decimals) *
@@ -277,7 +300,7 @@ const sendWithdrawLogsGSheet = async (
 
 const sendMintLogsWebhook = async (params: IMintLogs): Promise<void> => {
     const webhookClient: WebhookClient = new WebhookClient({
-        url: DISCORD_WEBHOOK_URL_MINT,
+        url: DISCORD_WEBHOOK_URL_MINT!,
     });
 
     const header: string =
@@ -318,8 +341,8 @@ const sendMintLogsGSheet = async (doc: GoogleSpreadsheet, params: IMintLogs, tok
         gc_token1.price
     )
 
-    const balance0: bigint = await token0.balanceOf(CONTRACT_ADDRESS);
-    const balance1: bigint = await token1.balanceOf(CONTRACT_ADDRESS);
+    const balance0: bigint = await token0.balanceOf(CONTRACT_ADDRESS!);
+    const balance1: bigint = await token1.balanceOf(CONTRACT_ADDRESS!);
 
     const usd_balance0 = (
         (Number(balance0) / 10 ** gc_token0.decimals) *
@@ -355,7 +378,7 @@ const sendMintLogsGSheet = async (doc: GoogleSpreadsheet, params: IMintLogs, tok
 
 const sendSwapLogsWebhook = async (params: ISwapLogs): Promise<void> => {
     const webhookClient: WebhookClient = new WebhookClient({
-        url: DISCORD_WEBHOOK_URL_SWAP,
+        url: DISCORD_WEBHOOK_URL_SWAP!,
     });
 
     const token0: { price: number, symbol: string, decimals: number } = await getTokenInfoCoinGecko(params.token0);
@@ -560,12 +583,8 @@ const getRatioOfTokensAtPrice = (decimals0: number, decimals1: number, params: I
 };
 
 const swapToken1ToToken0 = async (contract: Ranger, poolConfig: IPoolConfig, info: IPriceRangeInfo, swap0: number, balance0: bigint, decimals0: number, decimals1: number): Promise<ISwapData> => {
-    if (SWAP_SLIPPAGE_PERCENT == undefined) {
-        throw new Error("Swap slippage percentage is undefined");
-    }
-
     const amountIn: bigint = BigInt(Math.floor(((swap0 - Number(balance0)) / (10 ** decimals0) * info.price) * (10 ** decimals1)));
-    const amountOutMinimum: bigint = BigInt(Math.floor((swap0 - Number(balance0)) * (1 - (Number(SWAP_SLIPPAGE_PERCENT) / 100))));
+    const amountOutMinimum: bigint = BigInt(Math.floor((swap0 - Number(balance0)) * (1 - (Number(SWAP_SLIPPAGE_PERCENT!) / 100))));
 
     const swap: ContractTransactionResponse = await contract.swap(poolConfig.token1, poolConfig.token0, amountIn, amountOutMinimum);
     const timestamp: string = getTimestamp();
@@ -576,12 +595,8 @@ const swapToken1ToToken0 = async (contract: Ranger, poolConfig: IPoolConfig, inf
 };
 
 const swapToken0ToToken1 = async (contract: Ranger, poolConfig: IPoolConfig, info: IPriceRangeInfo, swap1: number, balance1: bigint, decimals0: number, decimals1: number): Promise<ISwapData> => {
-    if (SWAP_SLIPPAGE_PERCENT == undefined) {
-        throw new Error("Swap slippage percentage is undefined");
-    }
-
     const amountIn: bigint = BigInt(Math.floor((swap1 - Number(balance1)) / (10 ** decimals1) / info.price * (10 ** decimals0)));
-    const amountOutMinimum: bigint = BigInt(Math.floor((swap1 - Number(balance1)) * (1 - (Number(SWAP_SLIPPAGE_PERCENT) / 100))));
+    const amountOutMinimum: bigint = BigInt(Math.floor((swap1 - Number(balance1)) * (1 - (Number(SWAP_SLIPPAGE_PERCENT!) / 100))));
 
     const swap: ContractTransactionResponse = await contract.swap(poolConfig.token0, poolConfig.token1, amountIn, amountOutMinimum);
     const timestamp: string = getTimestamp();
@@ -595,6 +610,14 @@ const customLog = (msg: string): void => {
     console.log(msg);
     fs.appendFile("logs.txt", msg + "\n");
 };
+
+const checkProtocolFee = async (pool: IUniswapV3Pool): Promise<void> => {
+    const fees: {token0: bigint, token1: bigint} = await pool.protocolFees();
+
+    if (fees.token0 != 0n || fees.token1 != 0n) {
+        throw new Error(`Pool protocol fees was activated! (token0: ${fees.token0} - token1: ${fees.token1})`);
+    }
+}
 
 export {
     POOL,
@@ -624,5 +647,7 @@ export {
     swapToken0ToToken1,
     customLog,
     getEthereumPriceCoinGecko,
-    checkGasPrice
+    checkGasPrice,
+    checkProtocolFee,
+    checkProcessEnvConstants
 };
