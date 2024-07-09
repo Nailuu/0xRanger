@@ -457,6 +457,7 @@ const sendSwapLogsGSheet = async (doc: GoogleSpreadsheet, params: ISwapLogs, poo
         usd_b_amount1: usd_b_amount1,
         usd_a_amount0: usd_a_amount0,
         usd_a_amount1: usd_a_amount1,
+        price_after_swap: params.priceAfterSwap.toString()
     });
 
     await row.save();
@@ -587,7 +588,9 @@ const swapToken1ToToken0 = async (contract: Ranger, poolConfig: IPoolConfig, inf
     const swapReceipt: ContractTransactionReceipt | null = await swap.wait(1);
     const totalGasUsed: bigint = swapReceipt!.gasUsed * swapReceipt!.gasPrice;
 
-    return { timestamp, amountIn, totalGasUsed, gasPrice: swapReceipt!.gasPrice, gasUsed: swapReceipt!.gasUsed };
+    const priceAfterSwap: number = await getPriceOracle(contract, poolConfig.pool, decimals0, decimals1);
+
+    return { timestamp, amountIn, totalGasUsed, gasPrice: swapReceipt!.gasPrice, gasUsed: swapReceipt!.gasUsed, priceAfterSwap };
 };
 
 const swapToken0ToToken1 = async (contract: Ranger, poolConfig: IPoolConfig, info: IPriceRangeInfo, swap1: number, balance1: bigint, decimals0: number, decimals1: number): Promise<ISwapData> => {
@@ -599,7 +602,9 @@ const swapToken0ToToken1 = async (contract: Ranger, poolConfig: IPoolConfig, inf
     const swapReceipt: ContractTransactionReceipt | null = await swap.wait(1);
     const totalGasUsed: bigint = swapReceipt!.gasUsed * swapReceipt!.gasPrice;
 
-    return { timestamp, amountIn, totalGasUsed, gasPrice: swapReceipt!.gasPrice, gasUsed: swapReceipt!.gasUsed };
+    const priceAfterSwap: number = await getPriceOracle(contract, poolConfig.pool, decimals0, decimals1);
+
+    return { timestamp, amountIn, totalGasUsed, gasPrice: swapReceipt!.gasPrice, gasUsed: swapReceipt!.gasUsed, priceAfterSwap };
 };
 
 const customLog = (msg: string): void => {

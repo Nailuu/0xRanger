@@ -22,6 +22,7 @@ export type ISwapLogs = {
     lowerPrice: number,
     upperPrice: number,
     price: number,
+    priceAfterSwap: number,
     ratio0: number,
     ratio1: number
 }

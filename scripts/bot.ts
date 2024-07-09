@@ -243,6 +243,7 @@ const bot = async (): Promise<void> => {
             totalGasUsed: 0n,
             gasPrice: 0n,
             gasUsed: 0n,
+            priceAfterSwap: 0
         };
     }
 
@@ -273,6 +274,7 @@ const bot = async (): Promise<void> => {
         lowerPrice: info.lowerPrice,
         upperPrice: info.upperPrice,
         price: info.price,
+        priceAfterSwap: swapData.priceAfterSwap,
         ratio0: info.ratio0,
         ratio1: info.ratio1,
     };
@@ -280,9 +282,9 @@ const bot = async (): Promise<void> => {
     customLog(`[${swapData.timestamp}] - Swap executed from ${option ? "token1" : "token0"} to ${option ? "token0" : "token1"}`);
 
     // Discord Webhook
-    await sendSwapLogsWebhook(swapLogsParams);
+    sendSwapLogsWebhook(swapLogsParams);
     // Google Sheets API
-    await sendSwapLogsGSheet(doc, swapLogsParams, poolConfig);
+    sendSwapLogsGSheet(doc, swapLogsParams, poolConfig);
 
     const amount0ToMint: bigint = await token0.balanceOf(CONTRACT_ADDRESS!);
     const amount1ToMint: bigint = await token1.balanceOf(CONTRACT_ADDRESS!);

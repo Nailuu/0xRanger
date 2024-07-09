@@ -4,4 +4,5 @@ export type ISwapData = {
     totalGasUsed: bigint;
     gasPrice: bigint;
     gasUsed: bigint;
+    priceAfterSwap: number;
 }
