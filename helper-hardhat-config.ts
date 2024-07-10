@@ -166,7 +166,8 @@ const sendErrorLogsWebhook = async (
 
     const header: string = "### " + functionName + "\n";
     const title: string = error.message + "\n";
-    const errorStack: string = "```fix\n" + error.stack + "```";
+    // truncate string if length > 1700 because discord webhook accept message only under 2000 characters
+    const errorStack: string = "```fix\n" + (error.stack!.length > 1700 ? error.stack?.substring(0, 1700) : error.stack) + "```";
     const tag: string = "\n<@&1258587489367494689>";
 
     await webhookClient.send({
